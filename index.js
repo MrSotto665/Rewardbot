@@ -17,7 +17,7 @@ bot.start((ctx) => {
 
 // ২. কন্টিনিউ বাটন
 bot.hears('🟢 Continue', (ctx) => {
-    ctx.reply('🔹 Join @Christmas_Rewards\n\nAfter completing task click on [Done]', 
+    ctx.reply('🔹 Join Payment Proof Channel: @Christmas_Rewards\n\nAfter completing task click on [Done]', 
     Markup.keyboard([['✅ Done']]).resize());
 });
 
@@ -97,3 +97,4 @@ app.listen(PORT, () => {
 
 // Error handling
 bot.catch((err) => console.log('Bot Error:', err));
+
