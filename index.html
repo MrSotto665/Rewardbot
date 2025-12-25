@@ -3,151 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Secret Meet - 1v1 Chat</title>
+    <title>Secret Meet - Live Debug</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { background: #0f0c29; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; overflow: hidden; }
+        body { background: #0f0c29; color: white; font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; }
         #app { display: flex; flex-direction: column; height: 100vh; }
+        .header { background: #1f1b4d; padding: 15px; text-align: center; font-weight: bold; border-bottom: 2px solid #ff0080; }
         
-        /* Header Style */
-        .header { background: #1f1b4d; padding: 15px; text-align: center; font-weight: bold; border-bottom: 2px solid #ff0080; box-shadow: 0px 2px 10px rgba(0,0,0,0.5); }
-        
-        /* Home Screen */
-        #home-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
-        .btn-main { padding: 18px 45px; border-radius: 50px; border: none; background: linear-gradient(45deg, #ff0080, #7928ca); color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; box-shadow: 0 4px 15px rgba(255, 0, 128, 0.4); }
-        .btn-main:active { transform: scale(0.95); }
-        #status-text { margin-top: 20px; color: #bbb; font-size: 14px; }
+        /* Debug Console Style */
+        #debug-box { 
+            position: fixed; bottom: 80px; left: 10px; right: 10px; 
+            background: rgba(0,0,0,0.8); color: #00ff00; font-family: monospace; 
+            font-size: 10px; padding: 10px; border-radius: 5px; z-index: 9999;
+            max-height: 100px; overflow-y: auto; pointer-events: none;
+        }
 
-        /* Chat Screen */
+        #home-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .btn-main { padding: 18px 45px; border-radius: 50px; border: none; background: linear-gradient(45deg, #ff0080, #7928ca); color: white; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-main:active { transform: scale(0.9); }
+        
         #chat-screen { flex: 1; display: none; flex-direction: column; background: #050505; }
         #messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
-        
-        /* Bubble Styles */
-        .msg { padding: 12px 16px; border-radius: 20px; max-width: 75%; word-wrap: break-word; font-size: 15px; line-height: 1.4; }
-        .me { background: #ff0080; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-        .partner { background: #2c2c2e; color: white; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .msg { padding: 10px 15px; border-radius: 15px; max-width: 70%; word-wrap: break-word; }
+        .me { background: #ff0080; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .partner { background: #2c2c2e; align-self: flex-start; border-bottom-left-radius: 2px; }
 
-        /* Input Area */
-        .input-area { padding: 12px; display: flex; background: #1a1a2e; border-top: 1px solid #333; align-items: center; }
-        input { flex: 1; padding: 12px 20px; border-radius: 25px; border: 1px solid #444; background: #0f0c29; color: white; outline: none; }
-        .send-btn { background: #ff0080; color: white; border: none; width: 45px; height: 45px; border-radius: 50%; margin-left: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .input-area { padding: 10px; display: flex; background: #1a1a2e; align-items: center; }
+        input { flex: 1; padding: 12px; border-radius: 25px; border: none; outline: none; background: #0f0c29; color: white; }
+        .send-btn { background: #ff0080; color: white; border: none; border-radius: 50%; margin-left: 8px; width: 45px; height: 45px; cursor: pointer; }
         
-        /* Stop Button */
-        .stop-chat { color: #ff4757; font-size: 12px; margin-top: 10px; cursor: pointer; text-decoration: underline; }
+        .status-msg { font-size: 12px; color: #888; text-align: center; margin: 5px 0; font-style: italic; }
     </style>
 </head>
 <body>
+
+    <div id="debug-box">Initializing Debug Mode...</div>
+
     <div id="app">
         <div class="header">❤️ SECRET MEET LIVE</div>
         
         <div id="home-screen">
-            <h2 style="margin-bottom: 10px;">Find Your Partner</h2>
-            <p style="color: #888; margin-bottom: 30px;">Chat anonymously with random people</p>
+            <h2>Find Your Partner</h2>
             <button class="btn-main" id="findBtn" onclick="findPartner()">🔍 START SEARCHING</button>
-            <p id="status-text">Ready to connect...</p>
+            <p id="status-text" style="color: #888;">Checking Connection...</p>
         </div>
 
         <div id="chat-screen">
             <div id="messages"></div>
             <div class="input-area">
-                <input id="minput" type="text" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                <input id="minput" type="text" placeholder="Type..." onkeypress="if(event.key==='Enter') sendMsg()">
                 <button class="send-btn" onclick="sendMsg()">➤</button>
             </div>
-            <center><div class="stop-chat" onclick="stopChat()">End Chat</div></center>
+            <center><div onclick="endChatLocal()" style="color:#ff4757; font-size:12px; padding:15px; cursor:pointer; text-decoration: underline;">End Chat & Leave</div></center>
         </div>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        const socket = io();
+        const debugBox = document.getElementById('debug-box');
+        
+        function log(msg) {
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            debugBox.innerHTML += `<br>[${time}] ${msg}`;
+            debugBox.scrollTop = debugBox.scrollHeight;
+            console.log(msg);
+        }
+
+        const socket = io({
+            transports: ['websocket'],
+            upgrade: false
+        });
+
         const userId = tg.initDataUnsafe?.user?.id;
+        log("Device UserID: " + (userId || "NOT FOUND"));
 
         tg.expand();
         tg.ready();
 
-        // ১. সার্ভারে জয়েন করা (Web-specific socket registration)
-        if (userId) {
-            socket.emit('join', userId);
-        }
-
-        // ২. পার্টনার খোঁজা শুরু (Socket ভিত্তিক ১-v-১ ম্যাচিং)
-        function findPartner() {
-            if (!userId) {
-                alert("Please open this app through Telegram.");
-                return;
-            }
-            document.getElementById('status-text').innerText = "🔎 Looking for someone special...";
-            document.getElementById('findBtn').disabled = true;
-            document.getElementById('findBtn').style.opacity = "0.6";
-            
-            // সার্ভারকে জানানো যে আমি ওয়েবসাইট ইউজারদের মাঝে ম্যাচ চাই
-            socket.emit('find_partner_web', userId); 
-        }
-
-        // ৩. যখন সার্ভার ম্যাচ খুঁজে পাবে
-        socket.on('match_found', () => {
-            showChatScreen();
+        // ১. কানেকশন সাকসেস
+        socket.on('connect', () => {
+            log("✅ Socket Connected! ID: " + socket.id);
+            document.getElementById('status-text').innerText = "Connected & Ready";
+            if (userId) socket.emit('join', userId);
         });
 
-        // ৪. মেসেজ পাঠানো
+        socket.on('connect_error', (err) => {
+            log("❌ Connection Error: " + err.message);
+        });
+
+        // ২. পার্টনার খোঁজা
+        function findPartner() {
+            if (!userId) {
+                log("⚠️ Error: No UserID found. Open via Telegram!");
+                alert("Please open this app from Telegram.");
+                return;
+            }
+            log("🔎 Sending Match Request for: " + userId);
+            document.getElementById('status-text').innerText = "🔎 Searching for partner...";
+            document.getElementById('findBtn').disabled = true;
+            document.getElementById('findBtn').style.opacity = "0.5";
+            socket.emit('find_partner_web', userId);
+        }
+
+        // ৩. ম্যাচ ফাউন্ড
+        socket.on('match_found', () => {
+            log("🎉 MATCH FOUND! Opening Chat Screen.");
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'flex';
+            addStatusMessage("Connected with a random partner.");
+        });
+
+        // ৪. মেসেজ রিসিভ
+        socket.on('receive_msg', (data) => {
+            log("📩 New Message Received");
+            addMessage(data.text, 'partner');
+        });
+
+        // ৫. মেসেজ পাঠানো
         function sendMsg() {
             const inp = document.getElementById('minput');
             const text = inp.value.trim();
-            if (!text || !userId) return;
-
+            if (!text) return;
             addMessage(text, 'me');
-            // 'send_msg' ইভেন্ট শুধুমাত্র ওয়েবসাইট টু ওয়েবসাইট চ্যাট নিশ্চিত করবে
             socket.emit('send_msg', { senderId: userId, text: text });
             inp.value = '';
         }
 
-        function handleKeyPress(e) {
-            if (e.key === 'Enter') sendMsg();
-        }
-
-        // ৫. মেসেজ রিসিভ করা
-        socket.on('receive_msg', (data) => {
-            if (document.getElementById('chat-screen').style.display !== 'flex') {
-                showChatScreen();
-            }
-            addMessage(data.text, 'partner');
-        });
-
-        // ৬. চ্যাট শেষ হওয়া
+        // ৬. পার্টনার চ্যাট ছেড়ে দিলে
         socket.on('chat_ended', () => {
-            alert("Partner has left the chat.");
-            resetUI();
+            log("⚠️ Partner Disconnected.");
+            addStatusMessage("Partner has left the chat.");
+            setTimeout(() => {
+                alert("Chat ended by partner.");
+                location.reload(); 
+            }, 1000);
         });
 
-        function stopChat() {
-            if (confirm("Are you sure you want to end this chat?")) {
-                // চ্যাট এন্ড করার সকেট সিগন্যাল (অপশনাল)
-                resetUI();
+        function endChatLocal() {
+            if(confirm("End this chat?")) {
+                log("🚪 Leaving Chat...");
+                location.reload(); 
             }
-        }
-
-        // হেল্পার ফাংশনসমূহ
-        function showChatScreen() {
-            document.getElementById('home-screen').style.display = 'none';
-            document.getElementById('chat-screen').style.display = 'flex';
-        }
-
-        function resetUI() {
-            document.getElementById('home-screen').style.display = 'flex';
-            document.getElementById('chat-screen').style.display = 'none';
-            document.getElementById('messages').innerHTML = "";
-            document.getElementById('status-text').innerText = "Ready to connect...";
-            document.getElementById('findBtn').disabled = false;
-            document.getElementById('findBtn').style.opacity = "1";
         }
 
         function addMessage(text, type) {
             const div = document.createElement('div');
             div.className = `msg ${type}`;
             div.innerText = text;
+            document.getElementById('messages').appendChild(div);
+            scrollDown();
+        }
+
+        function addStatusMessage(text) {
+            const p = document.createElement('p');
+            p.className = 'status-msg';
+            p.innerText = text;
+            document.getElementById('messages').appendChild(p);
+            scrollDown();
+        }
+
+        function scrollDown() {
             const container = document.getElementById('messages');
-            container.appendChild(div);
             container.scrollTop = container.scrollHeight;
         }
     </script>
