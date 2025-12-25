@@ -135,26 +135,37 @@ bot.on(['photo', 'video', 'sticker', 'voice', 'audio'], async (ctx) => {
 });
 
 // ৬. স্ট্যাটাস ও রেফারেল (বিস্তারিত তথ্য সহ)
+// ৬. স্ট্যাটাস ও রেফারেল (HTML Mode ব্যবহার করা হয়েছে এরর এড়াতে)
 bot.hears('👫 Refer & Earn', async (ctx) => {
-    const user = await User.findOne({ userId: ctx.from.id });
-    const refLink = `https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`;
-    const msg = `👫 **Referral Program:**\n\n` +
-                `Invite a friend and get 50 extra matches!\n\n` +
-                `Your Link: ${refLink}\n\n` +
-                `Total Referrals: ${user.referrals}\n` +
-                `Remaining Matches: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : user.matchLimit}`;
-    ctx.reply(msg, { parse_mode: 'Markdown' });
+    try {
+        const user = await User.findOne({ userId: ctx.from.id });
+        const refLink = `https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`;
+        
+        const msg = `👫 <b>Referral Program:</b>\n\n` +
+                    `Invite a friend and get 50 extra matches!\n\n` +
+                    `Your Link: ${refLink}\n\n` +
+                    `Total Referrals: ${user.referrals || 0}\n` +
+                    `Remaining Matches: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : (user.matchLimit || 0)}`;
+        
+        await ctx.reply(msg, { parse_mode: 'HTML' });
+    } catch (err) {
+        console.error("Refer Error:", err);
+    }
 });
 
 bot.hears('👤 My Status', async (ctx) => {
-    const user = await User.findOne({ userId: ctx.from.id });
-    const statusMsg = `👤 **Profile:**\n` +
-                      `Name: ${user.firstName}\n` +
-                      `Matches Left: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : user.matchLimit}\n` +
-                      `Total Referrals: ${user.referrals}`;
-    ctx.reply(statusMsg, { parse_mode: 'Markdown' });
+    try {
+        const user = await User.findOne({ userId: ctx.from.id });
+        const statusMsg = `👤 <b>Profile:</b>\n` +
+                          `Name: ${user.firstName}\n` +
+                          `Matches Left: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : (user.matchLimit || 0)}\n` +
+                          `Total Referrals: ${user.referrals || 0}`;
+        
+        await ctx.reply(statusMsg, { parse_mode: 'HTML' });
+    } catch (err) {
+        console.error("Status Error:", err);
+    }
 });
-
 // ৭. চ্যাট ও সার্চ বন্ধ করা
 bot.hears('❌ Stop Chat', async (ctx) => {
     const user = await User.findOne({ userId: ctx.from.id });
@@ -175,4 +186,5 @@ bot.hears('❌ Stop Search', async (ctx) => {
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Active'));
 app.listen(PORT, () => { console.log(`Server started`); bot.launch(); });
+
 
