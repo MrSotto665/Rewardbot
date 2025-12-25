@@ -51,7 +51,7 @@ bot.hears('🔍 Find Partner', async (ctx) => {
     const isAdmin = userId === ADMIN_ID;
 
     if (!isAdmin && user.matchLimit <= 0) {
-        return ctx.reply('❌ Your match limit is over!', Markup.inlineKeyboard([
+        return ctx.reply('❌ Your match limit is over!\n\nVisit these links to get 5+5 matches (Once daily):', Markup.inlineKeyboard([
             [Markup.button.url('🔗 Link 1', 'https://otieu.com/4/9382477'), Markup.button.callback('✅ Verify 1', 'verify_1')],
             [Markup.button.url('🔗 Link 2', 'https://www.profitableratecpm.com/k8hkwgsm3z?key=2cb2941afdb3af8f1ca4ced95e61e00f'), Markup.button.callback('✅ Verify 2', 'verify_2')]
         ]));
@@ -175,3 +175,4 @@ bot.hears('❌ Stop Search', async (ctx) => {
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Active'));
 app.listen(PORT, () => { console.log(`Server started`); bot.launch(); });
+
