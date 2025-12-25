@@ -68,7 +68,7 @@ bot.on('text', async (ctx) => {
         userData[userId].email = text;
         userData[userId].step = 'wallet';
         console.log(`[DATA] User ${userName} submitted Email: ${text}`);
-        return ctx.reply('➡️ Submit Your USDT (BEP-20) Wallet Address\n\nMust Submit Valid Wallet Address.');
+        return ctx.reply('➡️ Submit Your USDT (Ton) Wallet Address\n\nMust Submit Valid Wallet Address.');
     } 
     
     if (userData[userId]?.step === 'wallet') {
@@ -97,4 +97,5 @@ app.listen(PORT, () => {
 
 // Error handling
 bot.catch((err) => console.log('Bot Error:', err));
+
 
