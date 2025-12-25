@@ -15,57 +15,73 @@ const ADMIN_ID = Number(process.env.ADMIN_ID);
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Database Connection
 mongoose.connect(MONGO_URI).then(() => console.log('✅ Connected to MongoDB')).catch(err => console.log('❌ DB Error:', err));
 
-// User Model
+// --- Database Schema (বট এবং ওয়েবসাইট আলাদা রাখার জন্য webStatus ও webPartnerId যোগ করা হয়েছে) ---
 const User = mongoose.model('User', new mongoose.Schema({
     userId: { type: Number, unique: true },
     firstName: String,
+    // Bot Chat Fields
     partnerId: { type: Number, default: null },
     status: { type: String, default: 'idle' },
+    // Web Chat Fields
+    webPartnerId: { type: Number, default: null },
+    webStatus: { type: String, default: 'idle' },
+    webSocketId: { type: String, default: null },
+    // Profile Fields
     matchLimit: { type: Number, default: 10 },
     referrals: { type: Number, default: 0 },
-    lastClaimed: { type: Date, default: null },
-    socketId: { type: String, default: null } // Web connection ID
+    lastClaimed: { type: Date, default: null }
 }));
 
-// --- Web Server Config ---
+// --- Web Server & Socket Logic (শুধুমাত্র ওয়েবসাইটের জন্য) ---
 app.use(express.static(path.join(__dirname)));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-// --- Socket.io Logic (For 1v1 Chat) ---
 io.on('connection', (socket) => {
     socket.on('join', async (userId) => {
         if (!userId) return;
-        await User.updateOne({ userId: Number(userId) }, { socketId: socket.id });
-        console.log(`🌐 User ${userId} connected via Web`);
+        await User.updateOne({ userId: Number(userId) }, { webSocketId: socket.id });
+    });
+
+    socket.on('find_partner_web', async (userId) => {
+        const user = await User.findOne({ userId: Number(userId) });
+        if (!user || user.webStatus === 'chatting') return;
+
+        await User.updateOne({ userId: user.userId }, { webStatus: 'searching' });
+
+        const partner = await User.findOne({ 
+            userId: { $ne: user.userId }, 
+            webStatus: 'searching' 
+        });
+
+        if (partner) {
+            await User.updateOne({ userId: user.userId }, { webStatus: 'chatting', webPartnerId: partner.userId });
+            await User.updateOne({ userId: partner.userId }, { webStatus: 'chatting', webPartnerId: user.userId });
+
+            io.to(socket.id).emit('match_found');
+            if (partner.webSocketId) io.to(partner.webSocketId).emit('match_found');
+        }
     });
 
     socket.on('send_msg', async (data) => {
         const { senderId, text } = data;
         const user = await User.findOne({ userId: Number(senderId) });
-        
-        if (user && user.partnerId) {
-            const partner = await User.findOne({ userId: user.partnerId });
-            
-            // ১. যদি পার্টনার ওয়েব অ্যাপে থাকে তবে সকেট দিয়ে পাঠাও
-            if (partner.socketId) {
-                io.to(partner.socketId).emit('receive_msg', { text });
-            } 
-            // ২. সকেট না থাকলে টেলিগ্রামে মেসেজ পাঠাও
-            bot.telegram.sendMessage(partner.userId, `💬 (Web) ${text}`).catch(e => {});
+        if (user && user.webPartnerId) {
+            const partner = await User.findOne({ userId: user.webPartnerId });
+            if (partner.webSocketId) {
+                io.to(partner.webSocketId).emit('receive_msg', { text });
+            }
         }
     });
 
     socket.on('disconnect', async () => {
-        await User.updateOne({ socketId: socket.id }, { socketId: null });
+        await User.updateOne({ webSocketId: socket.id }, { webSocketId: null });
     });
 });
 
-// --- Telegram Bot Logic ---
+// --- Telegram Bot Logic (আপনার আগের সব ফিচার এখানে) ---
 
-// স্টার্ট ও রেফারেল
 bot.start(async (ctx) => {
     try {
         const userId = ctx.from.id;
@@ -83,69 +99,107 @@ bot.start(async (ctx) => {
             }
             await user.save();
         }
-        ctx.reply(`👋 Welcome ${user.firstName}!\n🎁 Matches: ${user.matchLimit}`, {
+        const welcomeMsg = `👋 <b>Welcome to Secret Dating Bot!</b>\n\n🎁 Your Balance: ${userId === ADMIN_ID ? 'Unlimited' : user.matchLimit + ' Matches'} left.`;
+        ctx.reply(welcomeMsg, {
+            parse_mode: 'HTML',
             ...Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize()
         });
     } catch (err) { console.error("Start Error:", err); }
 });
 
-// পার্টনার খোঁজা (Optimized for Web & Bot)
 bot.hears('🔍 Find Partner', async (ctx) => {
     try {
         const userId = ctx.from.id;
         const user = await User.findOne({ userId });
+        const isAdmin = userId === ADMIN_ID;
 
-        if (userId !== ADMIN_ID && user.matchLimit <= 0) return ctx.reply('❌ No matches left!');
-        if (user.status === 'chatting') return ctx.reply('❌ Already chatting!');
+        if (!isAdmin && user.matchLimit <= 0) {
+            return ctx.reply('❌ <b>Limit over!</b>', {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([[
+                    Markup.button.url('🔗 Open Link', 'https://otieu.com/4/9382477'),
+                    Markup.button.callback('✅ Verify', 'verify_1')
+                ]])
+            });
+        }
 
+        if (user.status === 'chatting') return ctx.reply('❌ Already in a chat!');
         await User.updateOne({ userId }, { status: 'searching' });
-        ctx.reply(`🔎 Searching...`);
+        ctx.reply(`🔎 Searching for a partner in Bot...`, Markup.keyboard([['❌ Stop Search'], ['👤 My Status', '👫 Refer & Earn']]).resize());
 
         const partner = await User.findOne({ userId: { $ne: userId }, status: 'searching' });
         if (partner) {
+            if (!isAdmin) await User.updateOne({ userId }, { $inc: { matchLimit: -1 } });
+            if (partner.userId !== ADMIN_ID) await User.updateOne({ userId: partner.userId }, { $inc: { matchLimit: -1 } });
             await User.updateOne({ userId }, { status: 'chatting', partnerId: partner.userId });
             await User.updateOne({ userId: partner.userId }, { status: 'chatting', partnerId: userId });
             
-            const msg = '✅ Partner found! Start chatting...';
-            ctx.reply(msg);
-            bot.telegram.sendMessage(partner.userId, msg).catch(e => {});
-
-            // যদি তারা ওয়েব অ্যাপে থাকে তবে তাদের স্ক্রিন চেঞ্জ করে দাও
-            if (user.socketId) io.to(user.socketId).emit('match_found');
-            if (partner.socketId) io.to(partner.socketId).emit('match_found');
+            const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
+            ctx.reply('✅ Partner found! Start chatting...', menu);
+            bot.telegram.sendMessage(partner.userId, '✅ Partner found! Start chatting...', menu).catch(e => {});
         }
     } catch (err) { console.error("Match Error:", err); }
 });
 
-// মেসেজ ফরওয়ার্ডিং লজিক (Bot to Partner)
-bot.on('text', async (ctx, next) => {
-    const user = await User.findOne({ userId: ctx.from.id });
-    if (user && user.status === 'chatting' && user.partnerId) {
-        const partner = await User.findOne({ userId: user.partnerId });
-        
-        // ১. পার্টনার যদি ওয়েব অ্যাপে থাকে
-        if (partner.socketId) {
-            io.to(partner.socketId).emit('receive_msg', { text: ctx.message.text });
-        } 
-        // ২. পার্টনার যদি টেলিগ্রামে থাকে
-        bot.telegram.sendMessage(partner.userId, ctx.message.text).catch(e => ctx.reply('⚠️ Partner left.'));
-        return;
-    }
-    next();
+bot.action(/verify_/, async (ctx) => {
+    try {
+        const user = await User.findOne({ userId: ctx.from.id });
+        const today = new Date().setHours(0, 0, 0, 0);
+        if (user.lastClaimed && new Date(user.lastClaimed).getTime() === today) return ctx.answerCbQuery('❌ Already claimed!', { show_alert: true });
+        await User.updateOne({ userId: ctx.from.id }, { $inc: { matchLimit: 5 }, $set: { lastClaimed: new Date(today) } });
+        ctx.answerCbQuery('✅ 5 Matches Added!');
+        ctx.editMessageText('🎉 <b>Bonus Added!</b>', { parse_mode: 'HTML' });
+    } catch (err) { console.error("Verify Error:", err); }
 });
 
-// স্টপ চ্যাট
+bot.on('text', async (ctx, next) => {
+    try {
+        const text = ctx.message.text;
+        const userId = ctx.from.id;
+        const user = await User.findOne({ userId });
+        if (!user) return;
+
+        if (text.startsWith('/broadcast ') && userId === ADMIN_ID) {
+            const msg = text.replace('/broadcast ', '').trim();
+            const all = await User.find({});
+            all.forEach(u => bot.telegram.sendMessage(u.userId, msg).catch(e => {}));
+            return ctx.reply('✅ Broadcast sent.');
+        }
+
+        if (['🔍 Find Partner', '👤 My Status', '👫 Refer & Earn', '❌ Stop Chat', '❌ Stop Search', '/start'].includes(text)) return next();
+
+        // লিং ফিল্টার
+        if (userId !== ADMIN_ID && /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(@[^\s]+)/gi.test(text)) {
+            return ctx.reply('⚠️ Blocked!');
+        }
+
+        // বটের মেসেজ শুধুমাত্র বটের পার্টনারকে যাবে
+        if (user.status === 'chatting' && user.partnerId) {
+            bot.telegram.sendMessage(user.partnerId, text).catch(e => ctx.reply('⚠️ Partner left.'));
+        }
+    } catch (err) { console.error("Text Error:", err); }
+});
+
+bot.hears('👫 Refer & Earn', async (ctx) => {
+    const user = await User.findOne({ userId: ctx.from.id });
+    const refLink = `https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`;
+    ctx.reply(`👫 <b>Referral</b>\n\nInvite link:\n${refLink}\n\nStats: ${user.referrals || 0}`, { parse_mode: 'HTML' });
+});
+
+bot.hears('👤 My Status', async (ctx) => {
+    const user = await User.findOne({ userId: ctx.from.id });
+    ctx.reply(`👤 <b>Status:</b>\nMatches: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : user.matchLimit}`, { parse_mode: 'HTML' });
+});
+
 bot.hears('❌ Stop Chat', async (ctx) => {
     const user = await User.findOne({ userId: ctx.from.id });
+    const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
     if (user && user.partnerId) {
         await User.updateOne({ userId: user.partnerId }, { status: 'idle', partnerId: null });
-        bot.telegram.sendMessage(user.partnerId, '❌ Partner ended the chat.').catch(e => {});
-        // ওয়েব অ্যাপে থাকলে সিগন্যাল পাঠানো
-        const partner = await User.findOne({ userId: user.partnerId });
-        if (partner.socketId) io.to(partner.socketId).emit('chat_ended');
+        bot.telegram.sendMessage(user.partnerId, '❌ Partner ended.', menu).catch(e => {});
     }
     await User.updateOne({ userId: ctx.from.id }, { status: 'idle', partnerId: null });
-    ctx.reply('❌ Chat ended.');
+    ctx.reply('❌ Chat ended.', menu);
 });
 
 // Server Start
