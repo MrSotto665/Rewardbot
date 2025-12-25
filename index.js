@@ -34,27 +34,57 @@ const User = mongoose.model('User', new mongoose.Schema({
 }));
 
 // --- ওয়েবসাইট সার্ভার ও সকেট লজিক (বট থেকে সম্পূর্ণ আলাদা) ---
+// --- ওয়েবসাইট সার্ভার ও সকেট লজিক (Updated & Fixed) ---
 app.use(express.static(path.join(__dirname)));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 io.on('connection', (socket) => {
+    console.log('🌐 New Web Connection:', socket.id);
+
     socket.on('join', async (userId) => {
         if (!userId) return;
-        await User.updateOne({ userId: Number(userId) }, { webSocketId: socket.id });
+        // ইউজার জয়েন করলে তার সকেট আইডি ডাটাবেসে আপডেট করা
+        await User.findOneAndUpdate(
+            { userId: Number(userId) }, 
+            { webSocketId: socket.id }, 
+            { upsert: true }
+        );
+        console.log(`👤 User ${userId} joined with socket ${socket.id}`);
     });
 
     socket.on('find_partner_web', async (userId) => {
-        const user = await User.findOne({ userId: Number(userId) });
-        if (!user || user.webStatus === 'chatting') return;
+        try {
+            console.log(`🔎 Search request from: ${userId}`);
+            
+            // ১. বর্তমান ইউজারের স্ট্যাটাস 'searching' করা
+            const user = await User.findOneAndUpdate(
+                { userId: Number(userId) }, 
+                { webStatus: 'searching', webSocketId: socket.id }, 
+                { new: true, upsert: true }
+            );
 
-        await User.updateOne({ userId: user.userId }, { webStatus: 'searching' });
-        const partner = await User.findOne({ userId: { $ne: user.userId }, webStatus: 'searching' });
+            // ২. অন্য কোনো 'searching' ইউজার আছে কি না দেখা
+            const partner = await User.findOne({ 
+                userId: { $ne: Number(userId) }, 
+                webStatus: 'searching',
+                webSocketId: { $ne: null } // নিশ্চিত করা যে সে অনলাইনে আছে
+            });
 
-        if (partner) {
-            await User.updateOne({ userId: user.userId }, { webStatus: 'chatting', webPartnerId: partner.userId });
-            await User.updateOne({ userId: partner.userId }, { webStatus: 'chatting', webPartnerId: user.userId });
-            io.to(socket.id).emit('match_found');
-            if (partner.webSocketId) io.to(partner.webSocketId).emit('match_found');
+            if (partner) {
+                console.log(`✅ Match Found: ${userId} <--> ${partner.userId}`);
+
+                // ৩. দুজনকে 'chatting' মুডে নেওয়া
+                await User.updateOne({ userId: user.userId }, { webStatus: 'chatting', webPartnerId: partner.userId });
+                await User.updateOne({ userId: partner.userId }, { webStatus: 'chatting', webPartnerId: user.userId });
+
+                // ৪. দুজনকে সিগন্যাল পাঠানো
+                io.to(socket.id).emit('match_found');
+                io.to(partner.webSocketId).emit('match_found');
+            } else {
+                console.log(`⏳ No partner found yet for ${userId}, waiting...`);
+            }
+        } catch (err) {
+            console.error("Web Match Error:", err);
         }
     });
 
@@ -63,12 +93,16 @@ io.on('connection', (socket) => {
         const user = await User.findOne({ userId: Number(senderId) });
         if (user && user.webPartnerId) {
             const partner = await User.findOne({ userId: user.webPartnerId });
-            if (partner.webSocketId) io.to(partner.webSocketId).emit('receive_msg', { text });
+            if (partner && partner.webSocketId) {
+                io.to(partner.webSocketId).emit('receive_msg', { text });
+            }
         }
     });
 
     socket.on('disconnect', async () => {
-        await User.updateOne({ webSocketId: socket.id }, { webSocketId: null });
+        // ডিসকানেক্ট হলে স্ট্যাটাস রিজেট করা (ঐচ্ছিক কিন্তু ভালো)
+        await User.updateOne({ webSocketId: socket.id }, { webSocketId: null, webStatus: 'idle' });
+        console.log('🔌 Socket disconnected:', socket.id);
     });
 });
 
@@ -250,3 +284,4 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
