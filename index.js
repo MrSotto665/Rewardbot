@@ -58,12 +58,13 @@ bot.start(async (ctx) => {
 });
 
 // ২. পার্টনার খোঁজা (লিমিট চেক সহ)
+// ৩. পার্টনার খোঁজা (শুধু কানেক্ট হলে কনসোল লগ দেখাবে)
 bot.hears('🔍 Find Partner', async (ctx) => {
     const userId = ctx.from.id;
     const user = await User.findOne({ userId });
 
     if (user.matchLimit <= 0 && userId !== ADMIN_ID) {
-        return ctx.reply('❌ Your match limit is over!\n\nRefer 1 friend to get 50 more matches. Click [👫 Refer & Earn] to get your link.');
+        return ctx.reply('❌ Your match limit is over!\n\nRefer 1 friend to get 50 more matches.');
     }
 
     if (user.status === 'chatting') return ctx.reply('❌ Already in a chat!');
@@ -74,15 +75,20 @@ bot.hears('🔍 Find Partner', async (ctx) => {
     const partner = await User.findOne({ userId: { $ne: userId }, status: 'searching' });
     
     if (partner) {
-        // ম্যাচ সফল হলে দুজনের লিমিট ১ কমিয়ে দেওয়া (অ্যাডমিন বাদে)
+        // লিমিট কমানোর লজিক (অ্যাডমিন বাদে)
         if (userId !== ADMIN_ID) await User.updateOne({ userId }, { $inc: { matchLimit: -1 } });
         if (partner.userId !== ADMIN_ID) await User.updateOne({ userId: partner.userId }, { $inc: { matchLimit: -1 } });
 
         await User.updateOne({ userId }, { status: 'chatting', partnerId: partner.userId });
         await User.updateOne({ userId: partner.userId }, { status: 'chatting', partnerId: userId });
 
-        ctx.reply('✅ Partner found!', Markup.keyboard([['❌ Stop Chat']]).resize());
-        bot.telegram.sendMessage(partner.userId, '✅ Partner found!', Markup.keyboard([['❌ Stop Chat']]).resize());
+        // --- শুধুমাত্র কানেক্ট হওয়ার কনসোল লগ ---
+        console.log(`✅ [CONNECTION] ${ctx.from.first_name} (${userId}) <--> ${partner.firstName} (${partner.userId})`);
+
+        const matchKeyboard = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
+
+        ctx.reply('✅ Partner found! Start chatting...', matchKeyboard);
+        bot.telegram.sendMessage(partner.userId, '✅ Partner found! Start chatting...', matchKeyboard);
     }
 });
 
@@ -161,4 +167,5 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     bot.launch();
 });
+
 
