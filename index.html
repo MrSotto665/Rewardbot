@@ -125,6 +125,8 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
+    
+    <script src='//libtl.com/sdk.js' data-zone='10375834' data-sdk='show_10375834'></script>
 </head>
 <body>
     <div id="app">
@@ -249,6 +251,33 @@
             const container = document.getElementById('messages');
             container.scrollTop = container.scrollHeight;
         }
+        
+
+// In-App Interstitial
+
+show_10375834({
+  type: 'inApp',
+  inAppSettings: {
+    frequency: 2,
+    capping: 0.1,
+    interval: 30,
+    timeout: 5,
+    everyPage: false
+  }
+})
+
+/*
+This value is decoded as follows:
+- show automatically 2 ads
+  within 0.1 hours (6 minutes)
+  with a 30-second interval between them
+  and a 5-second delay before the first one is shown.
+  The last digit, 0, means that the session will be saved when you navigate between pages.
+  If you set the last digit as 1, then at any transition between pages,
+  the session will be reset, and the ads will start again.
+*/
+
+
     </script>
 </body>
 </html>
