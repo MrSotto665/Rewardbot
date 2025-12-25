@@ -58,6 +58,19 @@ io.on('connection', (socket) => {
         console.log(`👤 User ${userId} is now online (Idle)`);
     });
 
+    socket.on('leave_chat', async (userId) => {
+        const user = await User.findOne({ userId: Number(userId) });
+        if (user && user.webPartnerId) {
+            const partner = await User.findOne({ userId: user.webPartnerId });
+            if (partner && partner.webSocketId) {
+                io.to(partner.webSocketId).emit('chat_ended'); // পার্টনারকে জানানো
+            }
+            // ডাটাবেস আপডেট
+            await User.updateOne({ userId: user.userId }, { webStatus: 'idle', webPartnerId: null });
+            await User.updateOne({ userId: partner.userId }, { webStatus: 'idle', webPartnerId: null });
+        }
+    });
+
     socket.on('find_partner_web', async (userId) => {
         try {
             // ১. আগে নিজের স্ট্যাটাস 'searching' এ সেট করা
@@ -307,5 +320,6 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
