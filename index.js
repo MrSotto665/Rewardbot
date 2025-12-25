@@ -166,9 +166,14 @@ bot.start(async (ctx) => {
             }
             await user.save();
         }
+        
         const welcomeMsg = `👋 <b>Welcome to Secret Dating Bot!</b>\n\n🎁 Your Balance: ${userId === ADMIN_ID ? 'Unlimited' : user.matchLimit + ' Matches'} left.`;
+        
         ctx.reply(welcomeMsg, {
             parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+                [Markup.button.url('🚀 miniapp', 'https://t.me/RandomChatting18_Bot/MeetRandom')]
+            ]),
             ...Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize()
         });
     } catch (err) { console.error("Start Error:", err); }
@@ -324,6 +329,7 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
 
