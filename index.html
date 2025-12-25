@@ -66,32 +66,38 @@
         tg.expand();
         tg.ready();
 
-        // ১. সার্ভারে জয়েন করা
+        // ১. সার্ভারে জয়েন করা (Web-specific socket registration)
         if (userId) {
             socket.emit('join', userId);
         }
 
+        // ২. পার্টনার খোঁজা শুরু (Socket ভিত্তিক ১-v-১ ম্যাচিং)
         function findPartner() {
+            if (!userId) {
+                alert("Please open this app through Telegram.");
+                return;
+            }
             document.getElementById('status-text').innerText = "🔎 Looking for someone special...";
             document.getElementById('findBtn').disabled = true;
             document.getElementById('findBtn').style.opacity = "0.6";
             
-            // টেলিগ্রাম বটের লজিক ট্রিগার করা
-            tg.sendData("🔍 Find Partner"); 
+            // সার্ভারকে জানানো যে আমি ওয়েবসাইট ইউজারদের মাঝে ম্যাচ চাই
+            socket.emit('find_partner_web', userId); 
         }
 
-        // ২. পার্টনার পাওয়া গেলে
+        // ৩. যখন সার্ভার ম্যাচ খুঁজে পাবে
         socket.on('match_found', () => {
             showChatScreen();
         });
 
-        // ৩. মেসেজ পাঠানো
+        // ৪. মেসেজ পাঠানো
         function sendMsg() {
             const inp = document.getElementById('minput');
             const text = inp.value.trim();
-            if (!text) return;
+            if (!text || !userId) return;
 
             addMessage(text, 'me');
+            // 'send_msg' ইভেন্ট শুধুমাত্র ওয়েবসাইট টু ওয়েবসাইট চ্যাট নিশ্চিত করবে
             socket.emit('send_msg', { senderId: userId, text: text });
             inp.value = '';
         }
@@ -100,16 +106,15 @@
             if (e.key === 'Enter') sendMsg();
         }
 
-        // ৪. মেসেজ রিসিভ করা
+        // ৫. মেসেজ রিসিভ করা
         socket.on('receive_msg', (data) => {
-            // যদি চ্যাট স্ক্রিন এখনো ওপেন না থাকে তবে ওপেন করো
             if (document.getElementById('chat-screen').style.display !== 'flex') {
                 showChatScreen();
             }
             addMessage(data.text, 'partner');
         });
 
-        // ৫. চ্যাট শেষ হওয়া
+        // ৬. চ্যাট শেষ হওয়া
         socket.on('chat_ended', () => {
             alert("Partner has left the chat.");
             resetUI();
@@ -117,12 +122,12 @@
 
         function stopChat() {
             if (confirm("Are you sure you want to end this chat?")) {
-                tg.sendData("❌ Stop Chat");
+                // চ্যাট এন্ড করার সকেট সিগন্যাল (অপশনাল)
                 resetUI();
             }
         }
 
-        // হেল্পার ফাংশন
+        // হেল্পার ফাংশনসমূহ
         function showChatScreen() {
             document.getElementById('home-screen').style.display = 'none';
             document.getElementById('chat-screen').style.display = 'flex';
