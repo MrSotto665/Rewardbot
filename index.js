@@ -5,27 +5,25 @@ const app = express();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI; 
-const ADMIN_ID = Number(process.env.ADMIN_ID); // Ensure it's a number
+const ADMIN_ID = Number(process.env.ADMIN_ID); 
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// --- MongoDB Database Schema ---
-mongoose.connect(MONGO_URI).then(() => console.log('✅ DB Connected')).catch(err => console.log(err));
+mongoose.connect(MONGO_URI).then(() => console.log('✅ Connected to MongoDB')).catch(err => console.log('❌ DB Error:', err));
 
 const User = mongoose.model('User', new mongoose.Schema({
     userId: { type: Number, unique: true },
     firstName: String,
     partnerId: { type: Number, default: null },
     status: { type: String, default: 'idle' },
-    matchLimit: { type: Number, default: 50 }, 
-    referrals: { type: Number, default: 0 }
+    matchLimit: { type: Number, default: 50 },
+    referrals: { type: Number, default: 0 },
+    lastClaimed: { type: Date, default: null }
 }));
 
-// --- ১. স্টার্ট কমান্ড ও রেফারেল ---
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
     const startPayload = ctx.payload;
-
     let user = await User.findOne({ userId });
 
     if (!user) {
@@ -34,50 +32,56 @@ bot.start(async (ctx) => {
             const referrer = await User.findOne({ userId: Number(startPayload) });
             if (referrer) {
                 await User.updateOne({ userId: referrer.userId }, { $inc: { matchLimit: 50, referrals: 1 } });
-                bot.telegram.sendMessage(referrer.userId, `🎉 Someone joined via your link! +50 matches added.`);
+                bot.telegram.sendMessage(referrer.userId, `🎉 Someone joined via your link! You got +50 matches.`);
             }
         }
         await user.save();
     }
-
-    ctx.reply(`👋 Welcome to Secret Dating Bot!\n\n🎁 Balance: ${userId === ADMIN_ID ? 'Unlimited' : user.matchLimit + ' Matches'} left.`, 
-    Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize());
+    const welcomeMsg = `👋 Welcome to Secret Dating Bot!\n\n🎁 Your Balance: ${userId === ADMIN_ID ? 'Unlimited' : user.matchLimit + ' Matches'} left.`;
+    ctx.reply(welcomeMsg, Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize());
 });
 
-// --- ২. পার্টনার খোঁজা (Admin Unlimited) ---
 bot.hears('🔍 Find Partner', async (ctx) => {
     const userId = ctx.from.id;
     const user = await User.findOne({ userId });
     const isAdmin = userId === ADMIN_ID;
 
     if (!isAdmin && user.matchLimit <= 0) {
-        return ctx.reply('❌ Limit over! Refer 1 friend to get 50 more matches.');
+        return ctx.reply('❌ Your match limit is over!', Markup.inlineKeyboard([
+            [Markup.button.url('🔗 Link 1', 'https://otieu.com/4/9382477'), Markup.button.callback('✅ Verify 1', 'verify_1')],
+            [Markup.button.url('🔗 Link 2', 'https://www.profitableratecpm.com/k8hkwgsm3z?key=2cb2941afdb3af8f1ca4ced95e61e00f'), Markup.button.callback('✅ Verify 2', 'verify_2')]
+        ]));
     }
 
     if (user.status === 'chatting') return ctx.reply('❌ Already in a chat!');
-    
     await User.updateOne({ userId }, { status: 'searching' });
-    ctx.reply(`🔎 Searching... ${isAdmin ? '(Admin Mode)' : '(Left: ' + user.matchLimit + ')'}`, Markup.keyboard([['❌ Stop Search']]).resize());
+    ctx.reply(`🔎 Searching...`, Markup.keyboard([['❌ Stop Search']]).resize());
 
     const partner = await User.findOne({ userId: { $ne: userId }, status: 'searching' });
-    
     if (partner) {
-        // Limit deduction (Skip for Admin)
         if (!isAdmin) await User.updateOne({ userId }, { $inc: { matchLimit: -1 } });
         if (partner.userId !== ADMIN_ID) await User.updateOne({ userId: partner.userId }, { $inc: { matchLimit: -1 } });
-
         await User.updateOne({ userId }, { status: 'chatting', partnerId: partner.userId });
         await User.updateOne({ userId: partner.userId }, { status: 'chatting', partnerId: userId });
-
-        console.log(`✅ [CONNECTION] ${ctx.from.first_name} <--> ${partner.firstName}`);
-
+        console.log(`✅ [MATCH] ${ctx.from.first_name} <--> ${partner.firstName}`);
         const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
-        ctx.reply('✅ Partner found! Start chatting...', menu);
-        bot.telegram.sendMessage(partner.userId, '✅ Partner found! Start chatting...', menu);
+        ctx.reply('✅ Partner found!', menu);
+        bot.telegram.sendMessage(partner.userId, '✅ Partner found!', menu);
     }
 });
 
-// --- ৩. টেক্সট হ্যান্ডলার (Broadcast, Link Filter, Forwarding) ---
+bot.action(/verify_/, async (ctx) => {
+    const user = await User.findOne({ userId: ctx.from.id });
+    const today = new Date().setHours(0, 0, 0, 0);
+    if (user.lastClaimed && new Date(user.lastClaimed).getTime() === today) {
+        return ctx.answerCbQuery('❌ Already claimed today!', { show_alert: true });
+    }
+    await User.updateOne({ userId: ctx.from.id }, { $inc: { matchLimit: 5 }, $set: { lastClaimed: new Date(today) } });
+    ctx.answerCbQuery('✅ 5 Matches Added!');
+    ctx.editMessageText('🎉 Bonus Added! You can use these links again tomorrow.');
+});
+
+// --- ৪. টেক্সট হ্যান্ডলার (Admin Link support included) ---
 bot.on('text', async (ctx, next) => {
     const text = ctx.message.text;
     const userId = ctx.from.id;
@@ -86,57 +90,62 @@ bot.on('text', async (ctx, next) => {
 
     if (!user) return;
 
-    // Broadcast
     if (text.startsWith('/broadcast ') && isAdmin) {
         const msg = text.replace('/broadcast ', '');
-        const users = await User.find({});
-        users.forEach(u => bot.telegram.sendMessage(u.userId, `📢 **Admin Message:**\n\n${msg}`).catch(e => {}));
-        return ctx.reply('✅ Broadcast Sent!');
+        const all = await User.find({});
+        all.forEach(u => bot.telegram.sendMessage(u.userId, msg).catch(e => {}));
+        return ctx.reply('✅ Broadcast sent.');
     }
 
     if (['🔍 Find Partner', '👤 My Status', '👫 Refer & Earn', '❌ Stop Chat', '❌ Stop Search', '/start'].includes(text)) return next();
 
-    // Link & Username Filter (Except Admin)
+    // লিঙ্ক ফিল্টার (অ্যাডমিন ছাড়া সবার জন্য)
     if (!isAdmin) {
         const filter = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(@[^\s]+)/gi;
-        if (filter.test(text)) return ctx.reply('⚠️ Links and @Usernames are blocked!');
+        if (filter.test(text)) return ctx.reply('⚠️ Links and @usernames are not allowed!');
     }
 
-    // Forwarding
     if (user.status === 'chatting' && user.partnerId) {
         bot.telegram.sendMessage(user.partnerId, text).catch(e => ctx.reply('⚠️ Partner left.'));
     }
 });
 
-// --- ৪. মিডিয়া হ্যান্ডলার (Admin Only) ---
-bot.on(['photo', 'video', 'sticker', 'voice'], async (ctx) => {
+// --- ৫. মিডিয়া হ্যান্ডলার (Admin Media Broadcast included) ---
+bot.on(['photo', 'video', 'sticker', 'voice', 'audio'], async (ctx) => {
     const userId = ctx.from.id;
+    const isAdmin = userId === ADMIN_ID;
     const user = await User.findOne({ userId });
-    if (userId === ADMIN_ID && user.status === 'chatting' && user.partnerId) {
-        return ctx.copyMessage(user.partnerId); // Admin can send anything
+
+    // অ্যাডমিন মিডিয়া ব্রডকাস্ট (ক্যাপশনে /broadcast লিখলে)
+    const caption = ctx.message.caption || "";
+    if (isAdmin && caption.startsWith('/broadcast')) {
+        const all = await User.find({});
+        all.forEach(u => ctx.copyMessage(u.userId).catch(e => {}));
+        return ctx.reply('✅ Media Broadcast sent.');
     }
-    ctx.reply('⚠️ Media is blocked for safety!');
+
+    // চ্যাট ফরওয়ার্ডিং (শুধু অ্যাডমিন মিডিয়া পাঠাতে পারবে)
+    if (isAdmin && user && user.status === 'chatting' && user.partnerId) {
+        return ctx.copyMessage(user.partnerId);
+    }
+    ctx.reply('⚠️ Only text messages are allowed!');
 });
 
-// --- ৫. বাটন লজিক (Status, Refer, Stop) ---
-bot.hears('👫 Refer & Earn', async (ctx) => {
-    const refLink = `https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`;
-    ctx.reply(`👫 Invite friends & get 50 matches!\nYour Link: ${refLink}`);
-});
-
+bot.hears('👫 Refer & Earn', (ctx) => ctx.reply(`Invite friends: https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`));
 bot.hears('👤 My Status', async (ctx) => {
     const user = await User.findOne({ userId: ctx.from.id });
-    ctx.reply(`👤 Name: ${user.firstName}\nMatches: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : user.matchLimit}`);
+    ctx.reply(`👤 Profile:\nName: ${user.firstName}\nMatches: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : user.matchLimit}`);
 });
 
 bot.hears('❌ Stop Chat', async (ctx) => {
     const user = await User.findOne({ userId: ctx.from.id });
+    const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize();
     if (user.partnerId) {
         await User.updateOne({ userId: user.partnerId }, { status: 'idle', partnerId: null });
-        bot.telegram.sendMessage(user.partnerId, '❌ Partner ended the chat.', Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize());
+        bot.telegram.sendMessage(user.partnerId, '❌ Partner ended the chat.', menu);
     }
     await User.updateOne({ userId: ctx.from.id }, { status: 'idle', partnerId: null });
-    ctx.reply('❌ Chat ended.', Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize());
+    ctx.reply('❌ Chat ended.', menu);
 });
 
 bot.hears('❌ Stop Search', async (ctx) => {
@@ -145,5 +154,5 @@ bot.hears('❌ Stop Search', async (ctx) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot Active'));
-app.listen(PORT, () => { console.log('Server Live'); bot.launch(); });
+app.get('/', (req, res) => res.send('Active'));
+app.listen(PORT, () => { console.log(`Server Live`); bot.launch(); });
