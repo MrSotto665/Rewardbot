@@ -131,12 +131,29 @@ bot.on('text', async (ctx, next) => {
 
 bot.hears('❌ Stop Chat', async (ctx) => {
     const user = await User.findOne({ userId: ctx.from.id });
+    
+    // Partner-ke notification deya
     if (user && user.partnerId) {
         await User.updateOne({ userId: user.partnerId }, { status: 'idle', partnerId: null });
-        bot.telegram.sendMessage(user.partnerId, '❌ Chat ended.', Markup.keyboard([['🔍 Find Partner']]).resize());
+        bot.telegram.sendMessage(user.partnerId, '❌ Your partner ended the chat.', 
+            Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize()
+        );
     }
+    
+    // Nije chat end kora
     await User.updateOne({ userId: ctx.from.id }, { status: 'idle', partnerId: null });
-    ctx.reply('❌ Chat ended.', Markup.keyboard([['🔍 Find Partner']]).resize());
+    
+    ctx.reply('❌ Chat ended.', 
+        Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize()
+    );
+});
+
+// Search bondho korle-o jeno full menu ashe
+bot.hears('❌ Stop Search', async (ctx) => {
+    await User.updateOne({ userId: ctx.from.id }, { status: 'idle' });
+    ctx.reply('🔍 Search stopped.', 
+        Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize()
+    );
 });
 
 const PORT = process.env.PORT || 3000;
@@ -144,3 +161,4 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     bot.launch();
 });
+
