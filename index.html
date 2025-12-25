@@ -125,7 +125,7 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
-    
+    <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <script src='//libtl.com/sdk.js' data-zone='10375834' data-sdk='show_10375834'></script>
 </head>
 <body>
@@ -156,19 +156,36 @@
         const tg = window.Telegram.WebApp;
         const socket = io({ transports: ['websocket'], upgrade: false });
         const userId = tg.initDataUnsafe?.user?.id;
+        //Ads agram tags
+        const AdController = window.Adsgram.init({ blockId: "int-19991" });
 
         tg.expand();
         tg.ready();
 
         if (userId) socket.emit('join', userId);
 
-        function findPartner() {
-            if (!userId) return;
-            document.getElementById('status-text').innerText = "⚡ Searching...";
-            document.getElementById('findBtn').disabled = true;
-            document.getElementById('findBtn').style.opacity = "0.5";
-            socket.emit('find_partner_web', userId); 
-        }
+       function findPartner() {
+    if (!userId) return;
+
+    // 1. Prothome Ad dekhabe
+    AdController.show().then((result) => {
+        // 2. Ad successfully dekha hole ba close korle searching shuru hobe
+        startSearchingLogic();
+    }).catch((result) => {
+        // 3. Jodi kono error hoy (ad load na hoy), tobeo searching shuru hobe 
+        // jate user stuck hoye na thake
+        console.error("Ad error:", result);
+        startSearchingLogic();
+    });
+}
+
+// Main searching logic ti alada ekta function-e niye asha hoyeche
+function startSearchingLogic() {
+    document.getElementById('status-text').innerText = "⚡ Searching...";
+    document.getElementById('findBtn').disabled = true;
+    document.getElementById('findBtn').style.opacity = "0.5";
+    socket.emit('find_partner_web', userId); 
+}
 
         socket.on('match_found', () => {
             document.getElementById('input-container').style.display = 'flex';
