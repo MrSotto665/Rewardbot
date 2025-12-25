@@ -29,102 +29,107 @@ const User = mongoose.model('User', new mongoose.Schema({
 // ১. স্টার্ট কমান্ড
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
-    // ডাটাবেসে ইউজার সেভ করা (যদি আগে না থাকে)
     await User.findOneAndUpdate(
         { userId },
-        { firstName: ctx.from.first_name, username: ctx.from.username, step: 'start' },
-        { upsert: true, new: true }
+        { firstName: ctx.from.first_name, status: 'idle', partnerId: null },
+        { upsert: true }
     );
-
-    console.log(`[NEW USER] ${ctx.from.first_name} joined.`);
     
-    ctx.reply(`👋 Hello, ${ctx.from.first_name}! Welcome to Christmas Rewards Bot\n\n🎁 Joining Reward: 50 USDT\n👥 Each Referral: 5 USDT\n\n📢 Must Complete Mandatory Tasks:\n\n🔹 Join our Telegram Channel: @Christmas_Rewards\n\n🗒️ After completing task click on [Continue] to proceed`, 
-    Markup.keyboard([['🟢 Continue']]).resize());
+    ctx.reply(`👋 Welcome to Random Dating Bot!\n\nFind new people anonymously and start chatting.`, 
+    Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '❌ Stop Chat']]).resize());
 });
 
-bot.hears('🟢 Continue', (ctx) => {
-    ctx.reply('🔹 Join @Christmas_Rewards\n\nAfter completing task click on [Done]', 
-    Markup.keyboard([['✅ Done']]).resize());
-});
-
-bot.hears('✅ Done', async (ctx) => {
-    await User.updateOne({ userId: ctx.from.id }, { step: 'email' });
-    ctx.reply('🔹 Follow Binance Twitter Page\n🔹 Follow Binance Instagram Page\n\nSubmit Your Email ID To Proceed:', Markup.removeKeyboard());
-});
-
-// ২. টেক্সট মেসেজ হ্যান্ডলার
-bot.on('text', async (ctx) => {
+bot.on('text', async (ctx, next) => {
     const text = ctx.message.text;
     const userId = ctx.from.id;
     const user = await User.findOne({ userId });
 
     if (!user) return;
 
-    // --- অ্যাডমিন ব্রডকাস্ট ফিচার ---
+    // --- অ্যাডমিন ব্রডকাস্ট ফিচার (আগের মতোই কাজ করবে) ---
     if (text.startsWith('/broadcast ') && userId === ADMIN_ID) {
         const broadcastMsg = text.replace('/broadcast ', '');
         const allUsers = await User.find({});
         let successCount = 0;
-
         for (const u of allUsers) {
             try {
                 await bot.telegram.sendMessage(u.userId, broadcastMsg);
                 successCount++;
-            } catch (e) {
-                console.log(`Could not send to ${u.userId}`);
-            }
+            } catch (e) {}
         }
-        return ctx.reply(`📢 Broadcast complete! Sent to ${successCount} users.`);
+        return ctx.reply(`📢 Sent to ${successCount} users.`);
     }
 
-    // --- জেনারেল বাটনসমূহ ---
-    if (text === '💰 Balance') {
-        return ctx.reply(`🤴 User : ${ctx.from.first_name}\n\nYour Balance: 50 USDT`);
-    }
+    // --- ডেটিং ফিচার সমুহ ---
 
-    if (text === '↘️ Withdraw') {
-        await User.updateOne({ userId }, { step: 'withdraw_wallet' });
-        return ctx.reply('✅ Now Submit Your USDT (Ton) Wallet Address:');
-    }
+    // পার্টনার খোঁজা শুরু
+    if (text === '🔍 Find Partner') {
+        if (user.status === 'chatting') return ctx.reply('❌ You are already in a chat!');
+        
+        await User.updateOne({ userId }, { status: 'searching' });
+        ctx.reply('🔎 Searching for a random partner... please wait.', Markup.keyboard([['❌ Stop Search']]).resize());
 
-    if (text === '✅ Confirm') {
-        return ctx.reply(`📃 Please send 1 Ton as network fee.\n\nAddress :- UQAGu8dbpHzjFmy7GtZXg4fuchEU4X1-WVDlNkOHWBiIRMwr\n\n⚠️ Note: After send transaction fee click on [Verify]`, 
-        Markup.keyboard([['☑️ Verify']]).resize());
-    }
+        // অন্য কেউ সার্চ করছে কি না দেখা
+        const partner = await User.findOne({ 
+            userId: { $ne: userId }, 
+            status: 'searching' 
+        });
 
-    if (text === '☑️ Verify') {
-        ctx.reply('🖐️ Hold on checking your transaction......');
-        setTimeout(() => {
-            ctx.reply('❎ We haven\'t received transaction fee.');
-        }, 3000);
+        if (partner) {
+            // দুজনকে কানেক্ট করা
+            await User.updateOne({ userId }, { status: 'chatting', partnerId: partner.userId });
+            await User.updateOne({ userId: partner.userId }, { status: 'chatting', partnerId: userId });
+
+            ctx.reply('✅ Partner found! You can now send messages anonymously.', Markup.keyboard([['❌ Stop Chat']]).resize());
+            bot.telegram.sendMessage(partner.userId, '✅ Partner found! Say hi to your stranger.', Markup.keyboard([['❌ Stop Chat']]).resize());
+        }
         return;
     }
 
-    // --- ইনপুট ভ্যালিডেশন ---
-    if (user.step === 'email') {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(text)) {
-            return ctx.reply('❌ Invalid Email! Please send a valid email:');
+    // সার্চ বন্ধ করা
+    if (text === '❌ Stop Search') {
+        await User.updateOne({ userId }, { status: 'idle' });
+        return ctx.reply('🔍 Search stopped.', Markup.keyboard([['🔍 Find Partner']]).resize());
+    }
+
+    // চ্যাট বন্ধ করা
+    if (text === '❌ Stop Chat') {
+        if (user.status === 'chatting' && user.partnerId) {
+            const partnerId = user.partnerId;
+            await User.updateOne({ userId }, { status: 'idle', partnerId: null });
+            await User.updateOne({ userId: partnerId }, { status: 'idle', partnerId: null });
+
+            ctx.reply('❌ Chat ended.', Markup.keyboard([['🔍 Find Partner']]).resize());
+            bot.telegram.sendMessage(partnerId, '❌ Your partner ended the chat.', Markup.keyboard([['🔍 Find Partner']]).resize());
+        } else {
+            ctx.reply('You are not in a chat.');
         }
-        await User.updateOne({ userId }, { email: text, step: 'wallet' });
-        return ctx.reply('➡️ Submit Your USDT (BEP-20) Wallet Address:');
+        return;
     }
 
-    if (user.step === 'wallet') {
-        await User.updateOne({ userId }, { wallet: text, step: 'completed' });
-        return ctx.reply('🎉 Successfully joined!', Markup.keyboard([['💰 Balance', '↘️ Withdraw']]).resize());
+    // ইউজার স্ট্যাটাস দেখা
+    if (text === '👤 My Status') {
+        return ctx.reply(`Name: ${user.firstName}\nStatus: ${user.status.toUpperCase()}`);
     }
 
-    if (user.step === 'withdraw_wallet') {
-        await User.updateOne({ userId }, { step: 'ready' });
-        return ctx.reply(`➡️ Balance 50 USDT\nClick Confirm to proceed.`, Markup.keyboard([['✅ Confirm']]).resize());
+    // --- চ্যাট মেসেজ ফরওয়ার্ডিং লজিক ---
+    // যদি ইউজার চ্যাটিং অবস্থায় থাকে এবং কোনো বাটন না টিপে তবে তার মেসেজ পার্টনারের কাছে যাবে
+    if (user.status === 'chatting' && user.partnerId) {
+        try {
+            await bot.telegram.sendMessage(user.partnerId, text);
+        } catch (e) {
+            ctx.reply('⚠️ Error: Could not deliver message. Your partner might have blocked the bot.');
+        }
+    } else {
+        ctx.reply('⚠️ You are not connected to anyone. Click "🔍 Find Partner" to start.');
     }
 });
 
-// Render ও পোর্ট সেটআপ
+// Render Health Check
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot is Live with Database!'));
+app.get('/', (req, res) => res.send('Dating Bot is Live!'));
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     bot.launch();
 });
+
