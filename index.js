@@ -67,7 +67,12 @@ bot.hears('🔍 Find Partner', async (ctx) => {
 
         if (user.status === 'chatting') return ctx.reply('❌ Already in a chat!');
         await User.updateOne({ userId }, { status: 'searching' });
-        ctx.reply(`🔎 Searching...`, Markup.keyboard([['❌ Stop Search']]).resize());
+        
+        // সার্চিং অবস্থায় কিবোর্ড ফিক্স
+        ctx.reply(`🔎 Searching...`, Markup.keyboard([
+            ['❌ Stop Search'],
+            ['👤 My Status', '👫 Refer & Earn']
+        ]).resize());
 
         const partner = await User.findOne({ userId: { $ne: userId }, status: 'searching' });
         if (partner) {
@@ -179,7 +184,7 @@ bot.hears('👤 My Status', async (ctx) => {
 bot.hears('❌ Stop Chat', async (ctx) => {
     try {
         const user = await User.findOne({ userId: ctx.from.id });
-        const menu = Markup.keyboard([['🔍 Find Partner']]).resize();
+        const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
         if (user && user.partnerId) {
             await User.updateOne({ userId: user.partnerId }, { status: 'idle', partnerId: null });
             bot.telegram.sendMessage(user.partnerId, '❌ Partner ended the chat.', menu).catch(e => {});
@@ -192,11 +197,13 @@ bot.hears('❌ Stop Chat', async (ctx) => {
 bot.hears('❌ Stop Search', async (ctx) => {
     try {
         await User.updateOne({ userId: ctx.from.id }, { status: 'idle' });
-        ctx.reply('🔍 Search stopped.', Markup.keyboard([['🔍 Find Partner']]).resize());
+        // সার্চ বন্ধ করলে মেইন মেনু ফেরত আসবে
+        const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
+        ctx.reply('🔍 Search stopped.', menu);
     } catch (err) { console.error("StopSearch Error:", err); }
 });
 
-// এরর হ্যান্ডলিং (যাতে বট ক্র্যাশ না হয়)
+// এরর হ্যান্ডলিং
 bot.catch((err) => {
     console.error('⚠️ Global Bot Error:', err);
 });
