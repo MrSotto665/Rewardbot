@@ -3,23 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Secret Meet</title>
+    <title>Secret Meet - 1v1 Chat</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { background: #0f0c29; color: white; font-family: sans-serif; margin: 0; overflow: hidden; }
+        body { background: #0f0c29; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; overflow: hidden; }
         #app { display: flex; flex-direction: column; height: 100vh; }
-        .header { background: #1f1b4d; padding: 15px; text-align: center; font-weight: bold; border-bottom: 1px solid #333; }
-        #home-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        
+        /* Header Style */
+        .header { background: #1f1b4d; padding: 15px; text-align: center; font-weight: bold; border-bottom: 2px solid #ff0080; box-shadow: 0px 2px 10px rgba(0,0,0,0.5); }
+        
+        /* Home Screen */
+        #home-screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+        .btn-main { padding: 18px 45px; border-radius: 50px; border: none; background: linear-gradient(45deg, #ff0080, #7928ca); color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; box-shadow: 0 4px 15px rgba(255, 0, 128, 0.4); }
+        .btn-main:active { transform: scale(0.95); }
+        #status-text { margin-top: 20px; color: #bbb; font-size: 14px; }
+
+        /* Chat Screen */
         #chat-screen { flex: 1; display: none; flex-direction: column; background: #050505; }
-        #messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; }
-        .msg { padding: 10px 15px; border-radius: 18px; margin: 5px 0; max-width: 80%; word-wrap: break-word; }
-        .me { background: #ff0080; align-self: flex-end; }
-        .partner { background: #333; align-self: flex-start; }
-        .input-area { padding: 10px; display: flex; background: #1a1a2e; }
-        input { flex: 1; padding: 12px; border-radius: 25px; border: none; outline: none; }
-        button { background: #ff0080; color: white; border: none; padding: 10px 20px; border-radius: 25px; margin-left: 5px; }
-        .btn-main { padding: 15px 40px; border-radius: 30px; border: none; background: linear-gradient(45deg, #ff0080, #7928ca); color: white; font-size: 18px; font-weight: bold; cursor: pointer; }
+        #messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        
+        /* Bubble Styles */
+        .msg { padding: 12px 16px; border-radius: 20px; max-width: 75%; word-wrap: break-word; font-size: 15px; line-height: 1.4; }
+        .me { background: #ff0080; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .partner { background: #2c2c2e; color: white; align-self: flex-start; border-bottom-left-radius: 2px; }
+
+        /* Input Area */
+        .input-area { padding: 12px; display: flex; background: #1a1a2e; border-top: 1px solid #333; align-items: center; }
+        input { flex: 1; padding: 12px 20px; border-radius: 25px; border: 1px solid #444; background: #0f0c29; color: white; outline: none; }
+        .send-btn { background: #ff0080; color: white; border: none; width: 45px; height: 45px; border-radius: 50%; margin-left: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        
+        /* Stop Button */
+        .stop-chat { color: #ff4757; font-size: 12px; margin-top: 10px; cursor: pointer; text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -27,16 +42,19 @@
         <div class="header">❤️ SECRET MEET LIVE</div>
         
         <div id="home-screen">
-            <button class="btn-main" onclick="findPartner()">🔍 START SEARCHING</button>
-            <p id="status-text" style="margin-top: 20px; color: #aaa;">Not connected</p>
+            <h2 style="margin-bottom: 10px;">Find Your Partner</h2>
+            <p style="color: #888; margin-bottom: 30px;">Chat anonymously with random people</p>
+            <button class="btn-main" id="findBtn" onclick="findPartner()">🔍 START SEARCHING</button>
+            <p id="status-text">Ready to connect...</p>
         </div>
 
         <div id="chat-screen">
             <div id="messages"></div>
             <div class="input-area">
-                <input id="minput" type="text" placeholder="Type a message...">
-                <button onclick="sendMsg()">Send</button>
+                <input id="minput" type="text" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                <button class="send-btn" onclick="sendMsg()">➤</button>
             </div>
+            <center><div class="stop-chat" onclick="stopChat()">End Chat</div></center>
         </div>
     </div>
 
@@ -46,31 +64,78 @@
         const userId = tg.initDataUnsafe?.user?.id;
 
         tg.expand();
-        socket.emit('join', userId);
+        tg.ready();
 
-        function findPartner() {
-            document.getElementById('status-text').innerText = "Searching for partner...";
-            tg.sendData("🔍 Find Partner"); // বটের লজিক ট্রিগার করবে
+        // ১. সার্ভারে জয়েন করা
+        if (userId) {
+            socket.emit('join', userId);
         }
 
+        function findPartner() {
+            document.getElementById('status-text').innerText = "🔎 Looking for someone special...";
+            document.getElementById('findBtn').disabled = true;
+            document.getElementById('findBtn').style.opacity = "0.6";
+            
+            // টেলিগ্রাম বটের লজিক ট্রিগার করা
+            tg.sendData("🔍 Find Partner"); 
+        }
+
+        // ২. পার্টনার পাওয়া গেলে
         socket.on('match_found', () => {
-            document.getElementById('home-screen').style.display = 'none';
-            document.getElementById('chat-screen').style.display = 'flex';
+            showChatScreen();
         });
 
+        // ৩. মেসেজ পাঠানো
         function sendMsg() {
             const inp = document.getElementById('minput');
-            if (!inp.value) return;
-            addMessage(inp.value, 'me');
-            socket.emit('send_msg', { senderId: userId, text: inp.value });
+            const text = inp.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'me');
+            socket.emit('send_msg', { senderId: userId, text: text });
             inp.value = '';
         }
 
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendMsg();
+        }
+
+        // ৪. মেসেজ রিসিভ করা
         socket.on('receive_msg', (data) => {
-            document.getElementById('home-screen').style.display = 'none';
-            document.getElementById('chat-screen').style.display = 'flex';
+            // যদি চ্যাট স্ক্রিন এখনো ওপেন না থাকে তবে ওপেন করো
+            if (document.getElementById('chat-screen').style.display !== 'flex') {
+                showChatScreen();
+            }
             addMessage(data.text, 'partner');
         });
+
+        // ৫. চ্যাট শেষ হওয়া
+        socket.on('chat_ended', () => {
+            alert("Partner has left the chat.");
+            resetUI();
+        });
+
+        function stopChat() {
+            if (confirm("Are you sure you want to end this chat?")) {
+                tg.sendData("❌ Stop Chat");
+                resetUI();
+            }
+        }
+
+        // হেল্পার ফাংশন
+        function showChatScreen() {
+            document.getElementById('home-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'flex';
+        }
+
+        function resetUI() {
+            document.getElementById('home-screen').style.display = 'flex';
+            document.getElementById('chat-screen').style.display = 'none';
+            document.getElementById('messages').innerHTML = "";
+            document.getElementById('status-text').innerText = "Ready to connect...";
+            document.getElementById('findBtn').disabled = false;
+            document.getElementById('findBtn').style.opacity = "1";
+        }
 
         function addMessage(text, type) {
             const div = document.createElement('div');
