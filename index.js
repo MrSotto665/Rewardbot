@@ -5,7 +5,7 @@ const app = express();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI; 
-const ADMIN_ID = Number(process.env.ADMIN_ID); 
+const ADMIN_ID = process.env.ADMIN_ID; 
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -167,5 +167,6 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     bot.launch();
 });
+
 
 
