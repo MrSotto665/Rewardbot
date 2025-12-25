@@ -115,30 +115,18 @@ io.on('connection', (socket) => {
 socket.on('disconnect', async () => {
     try {
         const user = await User.findOne({ webSocketId: socket.id });
-        if (user && user.webPartnerId) {
-            const partner = await User.findOne({ userId: user.webPartnerId });
-            
-            if (partner && partner.webSocketId) {
-                // অপর ইউজারকে জানানো যে চ্যাট শেষ
-                io.to(partner.webSocketId).emit('chat_ended');
-                
-                // অপর ইউজারের স্ট্যাটাস ক্লিন করা
-                await User.updateOne(
-                    { userId: partner.userId }, 
-                    { webStatus: 'idle', webPartnerId: null }
-                );
+        if (user) {
+            if (user.webPartnerId) {
+                const partner = await User.findOne({ userId: user.webPartnerId });
+                if (partner && partner.webSocketId) {
+                    io.to(partner.webSocketId).emit('chat_ended');
+                    await User.updateOne({ userId: partner.userId }, { webStatus: 'idle', webPartnerId: null });
+                }
             }
-            
-            // নিজের স্ট্যাটাস ক্লিন করা
-            await User.updateOne(
-                { userId: user.userId }, 
-                { webSocketId: null, webStatus: 'idle', webPartnerId: null }
-            );
+            // নিজের আইডি ক্লিন করা
+            await User.updateOne({ userId: user.userId }, { webSocketId: null, webStatus: 'idle', webPartnerId: null });
         }
-        console.log('🔌 Socket disconnected and partner notified:', socket.id);
-    } catch (err) {
-        console.error("Disconnect error:", err);
-    }
+    } catch (err) { console.error("Disconnect Error:", err); }
 });
 });
 
@@ -320,6 +308,7 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
 
