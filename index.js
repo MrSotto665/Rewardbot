@@ -5,7 +5,7 @@ const app = express();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MONGO_URI = process.env.MONGO_URI; 
-const ADMIN_ID = process.env.ADMIN_ID; 
+const ADMIN_ID = Number(process.env.ADMIN_ID); // Ensure it's a number
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -17,156 +17,133 @@ const User = mongoose.model('User', new mongoose.Schema({
     firstName: String,
     partnerId: { type: Number, default: null },
     status: { type: String, default: 'idle' },
-    matchLimit: { type: Number, default: 50 }, // শুরুতে ৫০টি ফ্রি ম্যাচ
-    referrals: { type: Number, default: 0 }    // কতজন রেফার করেছে
+    matchLimit: { type: Number, default: 50 }, 
+    referrals: { type: Number, default: 0 }
 }));
 
-// --- বট লজিক ---
-
-// ১. স্টার্ট কমান্ড (রেফারেল হ্যান্ডলিং সহ)
+// --- ১. স্টার্ট কমান্ড ও রেফারেল ---
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
-    const startPayload = ctx.payload; // রেফারেল আইডি যদি থাকে
+    const startPayload = ctx.payload;
 
     let user = await User.findOne({ userId });
 
     if (!user) {
-        // নতুন ইউজার তৈরি
-        user = new User({
-            userId,
-            firstName: ctx.from.first_name,
-            status: 'idle'
-        });
-
-        // যদি কেউ রেফারেল লিঙ্কে ক্লিক করে আসে
+        user = new User({ userId, firstName: ctx.from.first_name });
         if (startPayload && Number(startPayload) !== userId) {
             const referrer = await User.findOne({ userId: Number(startPayload) });
             if (referrer) {
-                // রেফারারকে ৫০টি অতিরিক্ত ম্যাচ দেওয়া
-                await User.updateOne(
-                    { userId: referrer.userId },
-                    { $inc: { matchLimit: 50, referrals: 1 } }
-                );
-                bot.telegram.sendMessage(referrer.userId, `🎉 Someone joined via your link! You got +50 extra matches.`);
+                await User.updateOne({ userId: referrer.userId }, { $inc: { matchLimit: 50, referrals: 1 } });
+                bot.telegram.sendMessage(referrer.userId, `🎉 Someone joined via your link! +50 matches added.`);
             }
         }
         await user.save();
     }
 
-    ctx.reply(`👋 Welcome to Secret Dating Bot!\n\n🎁 Your Balance: ${user.matchLimit} Matches left.\n\nNote: For each referral, you get 50 extra matches!`, 
+    ctx.reply(`👋 Welcome to Secret Dating Bot!\n\n🎁 Balance: ${userId === ADMIN_ID ? 'Unlimited' : user.matchLimit + ' Matches'} left.`, 
     Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize());
 });
 
-// ২. পার্টনার খোঁজা (লিমিট চেক সহ)
-// ৩. পার্টনার খোঁজা (শুধু কানেক্ট হলে কনসোল লগ দেখাবে)
+// --- ২. পার্টনার খোঁজা (Admin Unlimited) ---
 bot.hears('🔍 Find Partner', async (ctx) => {
     const userId = ctx.from.id;
     const user = await User.findOne({ userId });
+    const isAdmin = userId === ADMIN_ID;
 
-    if (user.matchLimit <= 0 && userId !== ADMIN_ID) {
-        return ctx.reply('❌ Your match limit is over!\n\nRefer 1 friend to get 50 more matches.');
+    if (!isAdmin && user.matchLimit <= 0) {
+        return ctx.reply('❌ Limit over! Refer 1 friend to get 50 more matches.');
     }
 
     if (user.status === 'chatting') return ctx.reply('❌ Already in a chat!');
     
     await User.updateOne({ userId }, { status: 'searching' });
-    ctx.reply(`🔎 Searching... (Matches left: ${user.matchLimit})`, Markup.keyboard([['❌ Stop Search']]).resize());
+    ctx.reply(`🔎 Searching... ${isAdmin ? '(Admin Mode)' : '(Left: ' + user.matchLimit + ')'}`, Markup.keyboard([['❌ Stop Search']]).resize());
 
     const partner = await User.findOne({ userId: { $ne: userId }, status: 'searching' });
     
     if (partner) {
-        // লিমিট কমানোর লজিক (অ্যাডমিন বাদে)
-        if (userId !== ADMIN_ID) await User.updateOne({ userId }, { $inc: { matchLimit: -1 } });
+        // Limit deduction (Skip for Admin)
+        if (!isAdmin) await User.updateOne({ userId }, { $inc: { matchLimit: -1 } });
         if (partner.userId !== ADMIN_ID) await User.updateOne({ userId: partner.userId }, { $inc: { matchLimit: -1 } });
 
         await User.updateOne({ userId }, { status: 'chatting', partnerId: partner.userId });
         await User.updateOne({ userId: partner.userId }, { status: 'chatting', partnerId: userId });
 
-        // --- শুধুমাত্র কানেক্ট হওয়ার কনসোল লগ ---
-        console.log(`✅ [CONNECTION] ${ctx.from.first_name} (${userId}) <--> ${partner.firstName} (${partner.userId})`);
+        console.log(`✅ [CONNECTION] ${ctx.from.first_name} <--> ${partner.firstName}`);
 
-        const matchKeyboard = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
-
-        ctx.reply('✅ Partner found! Start chatting...', matchKeyboard);
-        bot.telegram.sendMessage(partner.userId, '✅ Partner found! Start chatting...', matchKeyboard);
+        const menu = Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn'], ['❌ Stop Chat']]).resize();
+        ctx.reply('✅ Partner found! Start chatting...', menu);
+        bot.telegram.sendMessage(partner.userId, '✅ Partner found! Start chatting...', menu);
     }
 });
 
-// ৩. রেফারেল লিঙ্ক জেনারেট করা
-bot.hears('👫 Refer & Earn', async (ctx) => {
-    const user = await User.findOne({ userId: ctx.from.id });
-    const refLink = `https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`;
-    
-    ctx.reply(`👫 Referral Program:\n\nInvite a friend and get 50 extra matches!\n\nYour Link: ${refLink}\n\nTotal Referrals: ${user.referrals}\nRemaining Matches: ${user.matchLimit}`);
-});
-
-// ৪. স্ট্যাটাস চেক
-bot.hears('👤 My Status', async (ctx) => {
-    const user = await User.findOne({ userId: ctx.from.id });
-    ctx.reply(`👤 Profile:\nName: ${user.firstName}\nMatches Left: ${user.matchLimit}\nTotal Referrals: ${user.referrals}`);
-});
-
-// ৫. আগের টেক্সট ফরওয়ার্ডিং লজিক (লিঙ্ক ফিল্টার ও অ্যাডমিন ব্রডকাস্টসহ)
+// --- ৩. টেক্সট হ্যান্ডলার (Broadcast, Link Filter, Forwarding) ---
 bot.on('text', async (ctx, next) => {
     const text = ctx.message.text;
     const userId = ctx.from.id;
     const isAdmin = userId === ADMIN_ID;
     const user = await User.findOne({ userId });
 
-    if (!user || ['🔍 Find Partner', '👤 My Status', '👫 Refer & Earn', '❌ Stop Chat', '❌ Stop Search', '/start'].includes(text)) {
-        return next();
+    if (!user) return;
+
+    // Broadcast
+    if (text.startsWith('/broadcast ') && isAdmin) {
+        const msg = text.replace('/broadcast ', '');
+        const users = await User.find({});
+        users.forEach(u => bot.telegram.sendMessage(u.userId, `📢 **Admin Message:**\n\n${msg}`).catch(e => {}));
+        return ctx.reply('✅ Broadcast Sent!');
     }
 
-    // লিঙ্ক ও @ ইউজারনেম ফিল্টার
+    if (['🔍 Find Partner', '👤 My Status', '👫 Refer & Earn', '❌ Stop Chat', '❌ Stop Search', '/start'].includes(text)) return next();
+
+    // Link & Username Filter (Except Admin)
     if (!isAdmin) {
-        const linkRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)/gi;
-        const mentionRegex = /@[^\s]+/g;
-        if (linkRegex.test(text) || mentionRegex.test(text)) {
-            return ctx.reply('⚠️ Links and @Usernames are not allowed!');
-        }
+        const filter = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|(t\.me\/[^\s]+)|(@[^\s]+)/gi;
+        if (filter.test(text)) return ctx.reply('⚠️ Links and @Usernames are blocked!');
     }
 
-    // চ্যাট ফরওয়ার্ডিং
+    // Forwarding
     if (user.status === 'chatting' && user.partnerId) {
-        try { await bot.telegram.sendMessage(user.partnerId, text); } catch (e) { ctx.reply('⚠️ Partner left.'); }
+        bot.telegram.sendMessage(user.partnerId, text).catch(e => ctx.reply('⚠️ Partner left.'));
     }
 });
 
-// বাকি সব (Stop Chat, Media Handler, Port) আগের কোডের মতোই থাকবে...
-// (সংক্ষিপ্ত করার জন্য এখানে পুনরাবৃত্তি করা হয়নি, আপনি আগের কোড থেকে শুধু bot.hears('❌ Stop Chat') এবং মিডিয়া হ্যান্ডলার অংশটি নিচে বসিয়ে দিলেই হবে)
+// --- ৪. মিডিয়া হ্যান্ডলার (Admin Only) ---
+bot.on(['photo', 'video', 'sticker', 'voice'], async (ctx) => {
+    const userId = ctx.from.id;
+    const user = await User.findOne({ userId });
+    if (userId === ADMIN_ID && user.status === 'chatting' && user.partnerId) {
+        return ctx.copyMessage(user.partnerId); // Admin can send anything
+    }
+    ctx.reply('⚠️ Media is blocked for safety!');
+});
+
+// --- ৫. বাটন লজিক (Status, Refer, Stop) ---
+bot.hears('👫 Refer & Earn', async (ctx) => {
+    const refLink = `https://t.me/${ctx.botInfo.username}?start=${ctx.from.id}`;
+    ctx.reply(`👫 Invite friends & get 50 matches!\nYour Link: ${refLink}`);
+});
+
+bot.hears('👤 My Status', async (ctx) => {
+    const user = await User.findOne({ userId: ctx.from.id });
+    ctx.reply(`👤 Name: ${user.firstName}\nMatches: ${ctx.from.id === ADMIN_ID ? 'Unlimited' : user.matchLimit}`);
+});
 
 bot.hears('❌ Stop Chat', async (ctx) => {
     const user = await User.findOne({ userId: ctx.from.id });
-    
-    // Partner-ke notification deya
-    if (user && user.partnerId) {
+    if (user.partnerId) {
         await User.updateOne({ userId: user.partnerId }, { status: 'idle', partnerId: null });
-        bot.telegram.sendMessage(user.partnerId, '❌ Your partner ended the chat.', 
-            Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize()
-        );
+        bot.telegram.sendMessage(user.partnerId, '❌ Partner ended the chat.', Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize());
     }
-    
-    // Nije chat end kora
     await User.updateOne({ userId: ctx.from.id }, { status: 'idle', partnerId: null });
-    
-    ctx.reply('❌ Chat ended.', 
-        Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize()
-    );
+    ctx.reply('❌ Chat ended.', Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize());
 });
 
-// Search bondho korle-o jeno full menu ashe
 bot.hears('❌ Stop Search', async (ctx) => {
     await User.updateOne({ userId: ctx.from.id }, { status: 'idle' });
-    ctx.reply('🔍 Search stopped.', 
-        Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize()
-    );
+    ctx.reply('🔍 Search stopped.', Markup.keyboard([['🔍 Find Partner'], ['👤 My Status', '👫 Refer & Earn']]).resize());
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    bot.launch();
-});
-
-
-
+app.get('/', (req, res) => res.send('Bot Active'));
+app.listen(PORT, () => { console.log('Server Live'); bot.launch(); });
