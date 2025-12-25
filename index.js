@@ -33,7 +33,7 @@ bot.on('text', async (ctx) => {
 
     if (text === '↘️ Withdraw') {
         userData[userId] = { ...userData[userId], step: 'withdraw_wallet' };
-        return ctx.reply('✅ Now Submit Your USDT (BEP-20) Wallet Address to confirm withdrawal:');
+        return ctx.reply('✅ Now Submit Your USDT (Ton) Wallet Address to confirm withdrawal:');
     }
 
     if (text === '✅ Confirm') {
@@ -80,5 +80,6 @@ app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
     bot.launch();
 });
+
 
 
