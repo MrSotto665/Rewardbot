@@ -41,50 +41,49 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 io.on('connection', (socket) => {
     console.log('🌐 New Web Connection:', socket.id);
 
-    socket.on('join', async (userId) => {
+   socket.on('join', async (userId) => {
         if (!userId) return;
-        // ইউজার জয়েন করলে তার সকেট আইডি ডাটাবেসে আপডেট করা
+        
+        // ইউজার জয়েন করলে তার আইডি আপডেট হবে কিন্তু স্ট্যাটাস 'idle' হয়ে যাবে
+        // এর ফলে আপনি নিজে 'Start Searching' এ ক্লিক না করা পর্যন্ত কেউ আপনাকে পাবে না
         await User.findOneAndUpdate(
             { userId: Number(userId) }, 
-            { webSocketId: socket.id }, 
+            { 
+                webSocketId: socket.id, 
+                webStatus: 'idle', // নতুন করে জয়েন করলে স্ট্যাটাস ক্লিয়ার
+                webPartnerId: null 
+            }, 
             { upsert: true }
         );
-        console.log(`👤 User ${userId} joined with socket ${socket.id}`);
+        console.log(`👤 User ${userId} is now online (Idle)`);
     });
 
     socket.on('find_partner_web', async (userId) => {
         try {
-            console.log(`🔎 Search request from: ${userId}`);
-            
-            // ১. বর্তমান ইউজারের স্ট্যাটাস 'searching' করা
+            // ১. আগে নিজের স্ট্যাটাস 'searching' এ সেট করা
             const user = await User.findOneAndUpdate(
                 { userId: Number(userId) }, 
                 { webStatus: 'searching', webSocketId: socket.id }, 
-                { new: true, upsert: true }
+                { new: true }
             );
 
-            // ২. অন্য কোনো 'searching' ইউজার আছে কি না দেখা
+            // ২. এমন একজনকে খোঁজা যে 'searching' মোডে আছে এবং যার socketId বর্তমানে অ্যাক্টিভ
             const partner = await User.findOne({ 
                 userId: { $ne: Number(userId) }, 
                 webStatus: 'searching',
-                webSocketId: { $ne: null } // নিশ্চিত করা যে সে অনলাইনে আছে
+                webSocketId: { $ne: null } 
             });
 
-            if (partner) {
-                console.log(`✅ Match Found: ${userId} <--> ${partner.userId}`);
-
-                // ৩. দুজনকে 'chatting' মুডে নেওয়া
+            if (partner && partner.webSocketId) {
+                // ম্যাচিং লজিক... (আগের মতোই থাকবে)
                 await User.updateOne({ userId: user.userId }, { webStatus: 'chatting', webPartnerId: partner.userId });
                 await User.updateOne({ userId: partner.userId }, { webStatus: 'chatting', webPartnerId: user.userId });
 
-                // ৪. দুজনকে সিগন্যাল পাঠানো
                 io.to(socket.id).emit('match_found');
                 io.to(partner.webSocketId).emit('match_found');
-            } else {
-                console.log(`⏳ No partner found yet for ${userId}, waiting...`);
             }
         } catch (err) {
-            console.error("Web Match Error:", err);
+            console.error("Match Error:", err);
         }
     });
 
@@ -99,11 +98,35 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', async () => {
-        // ডিসকানেক্ট হলে স্ট্যাটাস রিজেট করা (ঐচ্ছিক কিন্তু ভালো)
-        await User.updateOne({ webSocketId: socket.id }, { webSocketId: null, webStatus: 'idle' });
-        console.log('🔌 Socket disconnected:', socket.id);
-    });
+    // index.js এর ভেতর এই ডিসকানেক্ট লজিকটি দিন
+socket.on('disconnect', async () => {
+    try {
+        const user = await User.findOne({ webSocketId: socket.id });
+        if (user && user.webPartnerId) {
+            const partner = await User.findOne({ userId: user.webPartnerId });
+            
+            if (partner && partner.webSocketId) {
+                // অপর ইউজারকে জানানো যে চ্যাট শেষ
+                io.to(partner.webSocketId).emit('chat_ended');
+                
+                // অপর ইউজারের স্ট্যাটাস ক্লিন করা
+                await User.updateOne(
+                    { userId: partner.userId }, 
+                    { webStatus: 'idle', webPartnerId: null }
+                );
+            }
+            
+            // নিজের স্ট্যাটাস ক্লিন করা
+            await User.updateOne(
+                { userId: user.userId }, 
+                { webSocketId: null, webStatus: 'idle', webPartnerId: null }
+            );
+        }
+        console.log('🔌 Socket disconnected and partner notified:', socket.id);
+    } catch (err) {
+        console.error("Disconnect error:", err);
+    }
+});
 });
 
 // --- টেলিগ্রাম বট লজিক (আপনার অরিজিনাল কোড যা আপনি দিয়েছেন) ---
@@ -284,4 +307,5 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
