@@ -245,11 +245,9 @@
         });
 
         function endChatLocal() {
-            if (confirm("End this conversation?")) {
-                addStatusMessage("🔒 Chat closed by you.");
-                showEndControls();
-            }
-        }
+    addStatusMessage("🔒 Chat closed by you.");
+    showEndControls();
+}
 
         function showEndControls() {
             document.getElementById('input-container').style.display = 'none';
