@@ -209,12 +209,21 @@
 
         if (userId) socket.emit('join', userId);
 
-        function findPartner() {
-            if (!userId) return alert("Please use Telegram App");
-            document.getElementById('status-text').innerText = "⚡ Looking for someone special...";
-            document.getElementById('findBtn').disabled = true;
-            document.getElementById('findBtn').style.opacity = "0.5";
-            socket.emit('find_partner_web', userId); 
+        ffunction findNextPartner() {
+            // যদি আগের চ্যাট সেশন সার্ভারে থেকে যায় তা ক্লিয়ার করা
+            if (userId) {
+                socket.emit('leave_chat', userId); 
+            }
+            
+            document.getElementById('chat-screen').style.display = 'none';
+            document.getElementById('home-screen').style.display = 'flex';
+            document.getElementById('findBtn').disabled = false;
+            document.getElementById('findBtn').style.opacity = "1";
+            
+            // ১ সেকেন্ড বিরতি দিয়ে আবার সার্চ শুরু করা যাতে সার্ভার আপডেট হওয়ার সময় পায়
+            setTimeout(() => {
+                findPartner();
+            }, 500);
         }
 
         socket.on('match_found', () => {
@@ -245,9 +254,15 @@
         });
 
         function endChatLocal() {
-    addStatusMessage("🔒 Chat closed by you.");
-    showEndControls();
-}
+            addStatusMessage("🔒 You closed the chat.");
+            
+            // সার্ভারকে বলা যে আমি চ্যাট ছেড়েছি যাতে পার্টনার সিগন্যাল পায়
+            if (userId) {
+                socket.emit('leave_chat', userId);
+            }
+            
+            showEndControls();
+        }
 
         function showEndControls() {
             document.getElementById('input-container').style.display = 'none';
