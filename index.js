@@ -72,33 +72,49 @@ io.on('connection', (socket) => {
     });
 
     socket.on('find_partner_web', async (userId) => {
-        try {
-            // ১. আগে নিজের স্ট্যাটাস 'searching' এ সেট করা
-            const user = await User.findOneAndUpdate(
-                { userId: Number(userId) }, 
-                { webStatus: 'searching', webSocketId: socket.id }, 
-                { new: true }
-            );
+    try {
+        const user = await User.findOne({ userId: Number(userId) });
+        const isAdmin = user.userId === ADMIN_ID;
 
-            // ২. এমন একজনকে খোঁজা যে 'searching' মোডে আছে এবং যার socketId বর্তমানে অ্যাক্টিভ
-            const partner = await User.findOne({ 
-                userId: { $ne: Number(userId) }, 
-                webStatus: 'searching',
-                webSocketId: { $ne: null } 
-            });
+        // ১. লিমিট চেক করা (এডমিন বাদে)
+        if (!isAdmin && user.matchLimit <= 0) {
+            // বটের মাধ্যমে রেফারেল মেসেজ পাঠানো
+            const refLink = `https://t.me/${bot.botInfo.username}?start=${user.userId}`;
+            bot.telegram.sendMessage(user.userId, 
+                `❌ <b>Your match limit is over!</b>\n\nInvite friends to get more matches.\n🔗 ${refLink}`, 
+                { parse_mode: 'HTML' }
+            ).catch(e => {});
 
-            if (partner && partner.webSocketId) {
-                // ম্যাচিং লজিক... (আগের মতোই থাকবে)
-                await User.updateOne({ userId: user.userId }, { webStatus: 'chatting', webPartnerId: partner.userId });
-                await User.updateOne({ userId: partner.userId }, { webStatus: 'chatting', webPartnerId: user.userId });
-
-                io.to(socket.id).emit('match_found');
-                io.to(partner.webSocketId).emit('match_found');
-            }
-        } catch (err) {
-            console.error("Match Error:", err);
+            // ওয়েব অ্যাপে এলার্ট পাঠানো
+            return io.to(socket.id).emit('limit_over');
         }
-    });
+
+        // ২. সার্চিং স্ট্যাটাস আপডেট
+        await User.updateOne({ userId: Number(userId) }, { webStatus: 'searching', webSocketId: socket.id });
+
+        // ৩. পার্টনার খোঁজা
+        const partner = await User.findOne({ 
+            userId: { $ne: Number(userId) }, 
+            webStatus: 'searching',
+            webSocketId: { $ne: null } 
+        });
+
+        if (partner && partner.webSocketId) {
+            // ৪. লিমিট কমানো (এডমিন বাদে)
+            if (!isAdmin) await User.updateOne({ userId: user.userId }, { $inc: { matchLimit: -1 } });
+            if (partner.userId !== ADMIN_ID) await User.updateOne({ userId: partner.userId }, { $inc: { matchLimit: -1 } });
+
+            // ৫. স্ট্যাটাস আপডেট (Chatting)
+            await User.updateOne({ userId: user.userId }, { webStatus: 'chatting', webPartnerId: partner.userId });
+            await User.updateOne({ userId: partner.userId }, { webStatus: 'chatting', webPartnerId: user.userId });
+
+            io.to(socket.id).emit('match_found');
+            io.to(partner.webSocketId).emit('match_found');
+        }
+    } catch (err) {
+        console.error("Web Match Error:", err);
+    }
+});
 
     socket.on('send_msg', async (data) => {
         const { senderId, text } = data;
@@ -308,6 +324,7 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
 
