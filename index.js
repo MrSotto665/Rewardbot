@@ -333,6 +333,11 @@ bot.hears('❌ Stop Search', async (ctx) => {
     } catch (err) { console.error("StopSearch Error:", err); }
 });
 
+
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server Live`);
 // আপনার গ্রুপের ID এখানে দিন (যেমন: -100123456789)
 const GROUP_ID = -1002461999862; // আপনার আসল গ্রুপ আইডি দিন
 
@@ -371,13 +376,11 @@ async function sendAutoPromo() {
 setInterval(sendAutoPromo, 500000); 
 
 // বোট চালু হওয়ার সাথে সাথে প্রথম মেসেজ পাঠাতে চাইলে এটি কল করুন
-// sendAutoPromo();
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server Live`);
+sendAutoPromo();
+    
     bot.launch();
 });
+
 
 
 
