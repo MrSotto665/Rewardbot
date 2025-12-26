@@ -189,48 +189,27 @@
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        const socket = io({ transports: ['websocket'], upgrade: false });
-        const userId = tg.initDataUnsafe?.user?.id;
-        const AdController = window.Adsgram.init({ blockId: "int-19991" });
+    const tg = window.Telegram.WebApp;
+    const socket = io({ transports: ['websocket'], upgrade: false });
+    const userId = tg.initDataUnsafe?.user?.id;
+    const AdController = window.Adsgram.init({ blockId: "int-19991" });
 
-        tg.expand();
-        tg.ready();
+    tg.expand();
+    tg.ready();
 
-        if (userId) socket.emit('join', userId);
+    if (userId) socket.emit('join', userId);
 
-        function findPartner() {
-            if (!userId) return;
-            AdController.show().then(() => startSearchingLogic()).catch(() => startSearchingLogic());
-        }
-
-        function startSearchingLogic() {
-            document.getElementById('status-text').innerText = "⚡ Searching...";
-            document.getElementById('findBtn').disabled = true;
-            document.getElementById('findBtn').style.opacity = "0.5";
-            socket.emit('find_partner_web', userId); 
-        }
-
-        socket.on('match_found', () => {
-            document.getElementById('input-container').style.display = 'flex';
-            document.getElementById('stop-btn-container').style.display = 'block';
-            document.getElementById('home-screen').style.display = 'none';
-            document.getElementById('chat-screen').style.display = 'flex';
-            document.getElementById('messages').innerHTML = "";
-            addStatusMessage("✨ Match found! Say hello.");
-        });
-
-        function sendMsg() {
-            const inp = document.getElementById('minput');
-            if (!inp.value.trim()) return;
-            addMessage(inp.value, 'me');
-            socket.emit('send_msg', { senderId: userId, text: inp.value });
-            inp.value = '';
-            inp.focus(); // কিবোর্ড যাতে ওপেন থাকে
-        }
+    // ডুপ্লিকেট মেসেজ ঠেকাতে লিসেনার ক্লিন করার ফাংশন
+    function setupSocketListeners() {
+        socket.off('receive_msg');
+        socket.off('chat_ended');
 
         socket.on('receive_msg', (data) => {
-            addMessage(data.text, 'partner');
+            if (data.image) {
+                addImageMessage(data.image, 'partner');
+            } else if (data.text) {
+                addMessage(data.text, 'partner');
+            }
             tg.HapticFeedback.notificationOccurred('success');
         });
 
@@ -238,153 +217,142 @@
             addStatusMessage("🚫 Partner left the chat.");
             showEndControls();
         });
+    }
 
-        function endChatLocal() {
-            if (userId) socket.emit('leave_chat', userId);
-            addStatusMessage("🔒 You closed the chat.");
-            showEndControls();
+    function findPartner() {
+        if (!userId) return;
+        AdController.show().then(() => startSearchingLogic()).catch(() => startSearchingLogic());
+    }
+
+    function startSearchingLogic() {
+        document.getElementById('status-text').innerText = "⚡ Searching...";
+        document.getElementById('findBtn').disabled = true;
+        document.getElementById('findBtn').style.opacity = "0.5";
+        socket.emit('find_partner_web', userId); 
+    }
+
+    socket.on('match_found', () => {
+        document.getElementById('input-container').style.display = 'flex';
+        document.getElementById('stop-btn-container').style.display = 'block';
+        document.getElementById('home-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'flex';
+        document.getElementById('messages').innerHTML = "";
+        
+        setupSocketListeners(); // ম্যাচ হলে লিসেনার সেটআপ হবে
+        addStatusMessage("✨ Match found! Say hello.");
+    });
+
+    function sendMsg() {
+        const inp = document.getElementById('minput');
+        if (!inp.value.trim()) return;
+        addMessage(inp.value, 'me');
+        socket.emit('send_msg', { senderId: userId, text: inp.value });
+        inp.value = '';
+        inp.focus();
+    }
+
+    function sendPhoto(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const imageData = e.target.result;
+                addImageMessage(imageData, 'me');
+                socket.emit('send_msg', { senderId: userId, image: imageData });
+            };
+            reader.readAsDataURL(input.files[0]);
+            input.value = ""; 
         }
+    }
 
-        function showEndControls() {
-            document.getElementById('input-container').style.display = 'none';
-            document.getElementById('stop-btn-container').style.display = 'none';
-            
-            const old = document.getElementById('end-options-ui');
-            if(old) old.remove();
+    function addMessage(text, type) {
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        div.innerText = text;
+        document.getElementById('messages').appendChild(div);
+        scrollDown();
+    }
 
-            const controlDiv = document.createElement('div');
-            controlDiv.className = 'end-options';
-            controlDiv.id = 'end-options-ui';
-            controlDiv.innerHTML = `
-                <button class="btn-next" onclick="findNextPartner()">🔍 Find Next Person</button>
-                <button class="btn-exit" onclick="location.reload()">🏠 Return Home</button>
-            `;
-            document.getElementById('messages').appendChild(controlDiv);
-            setTimeout(scrollDown, 100); // বাটনগুলো রেন্ডার হওয়ার পর স্ক্রল হবে
-        }
+    // ইমেজ মেসেজ দেখানোর একক ফাংশন (ফিক্সড সাইজ সহ)
+    function addImageMessage(src, type) {
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'chat-img-container';
 
-        function findNextPartner() {
-            document.getElementById('chat-screen').style.display = 'none';
-            document.getElementById('home-screen').style.display = 'flex';
-            document.getElementById('findBtn').disabled = false;
-            document.getElementById('findBtn').style.opacity = "1";
-            findPartner();
-        }
+        const img = document.createElement('img');
+        img.src = src;
+        img.className = 'chat-img';
+        // প্রিভিউ এর জন্য টেলিগ্রাম স্টাইল পপআপ (অপশনাল)
+        img.onclick = () => tg.showPopup({ title: 'Image View', message: 'Viewing shared image.' });
+        
+        imgContainer.appendChild(img);
+        div.appendChild(imgContainer);
+        document.getElementById('messages').appendChild(div);
+        scrollDown();
+    }
 
-        function addMessage(text, type) {
-            const div = document.createElement('div');
-            div.className = `msg ${type}`;
-            div.innerText = text;
-            document.getElementById('messages').appendChild(div);
-            scrollDown();
-        }
+    function endChatLocal() {
+        if (userId) socket.emit('leave_chat', userId);
+        addStatusMessage("🔒 You closed the chat.");
+        showEndControls();
+    }
 
-        function addStatusMessage(text) {
-            const p = document.createElement('p');
-            p.className = 'status-msg';
-            p.innerText = text;
-            document.getElementById('messages').appendChild(p);
-            scrollDown();
-        }
+    function showEndControls() {
+        document.getElementById('input-container').style.display = 'none';
+        document.getElementById('stop-btn-container').style.display = 'none';
+        const old = document.getElementById('end-options-ui');
+        if(old) old.remove();
 
-        function scrollDown() {
-            const container = document.getElementById('messages');
-            container.scrollTop = container.scrollHeight;
-        }
+        const controlDiv = document.createElement('div');
+        controlDiv.className = 'end-options';
+        controlDiv.id = 'end-options-ui';
+        controlDiv.innerHTML = `
+            <button class="btn-next" onclick="findNextPartner()">🔍 Find Next Person</button>
+            <button class="btn-exit" onclick="location.reload()">🏠 Return Home</button>
+        `;
+        document.getElementById('messages').appendChild(controlDiv);
+        setTimeout(scrollDown, 100);
+    }
 
-        socket.on('limit_over', () => {
-            document.getElementById('status-text').innerText = "❌ Limit Over! Check Bot.";
-            document.getElementById('findBtn').disabled = false;
-            document.getElementById('findBtn').style.opacity = "1";
-            document.getElementById('limit-modal').style.display = 'flex';
+    function findNextPartner() {
+        document.getElementById('chat-screen').style.display = 'none';
+        document.getElementById('home-screen').style.display = 'flex';
+        document.getElementById('findBtn').disabled = false;
+        document.getElementById('findBtn').style.opacity = "1";
+        findPartner();
+    }
+
+    function addStatusMessage(text) {
+        const p = document.createElement('p');
+        p.className = 'status-msg';
+        p.innerText = text;
+        document.getElementById('messages').appendChild(p);
+        scrollDown();
+    }
+
+    function scrollDown() {
+        const container = document.getElementById('messages');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    socket.on('limit_over', () => {
+        document.getElementById('status-text').innerText = "❌ Limit Over! Check Bot.";
+        document.getElementById('findBtn').disabled = false;
+        document.getElementById('findBtn').style.opacity = "1";
+        document.getElementById('limit-modal').style.display = 'flex';
+    });
+
+    function closeLimitModal() {
+        document.getElementById('limit-modal').style.display = 'none';
+    }
+
+    if(window.show_10375834) {
+        show_10375834({
+            type: 'inApp',
+            inAppSettings: { frequency: 2, capping: 0.1, interval: 30, timeout: 5, everyPage: false }
         });
-
-        function closeLimitModal() {
-            document.getElementById('limit-modal').style.display = 'none';
-        }
-
-        // ফটো পাঠানোর ফাংশন
-// ফটো পাঠানোর ফাংশন (সাধারণ ইউজারদের জন্য ওপেন)
-function sendPhoto(input) {
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            const imageData = e.target.result;
-            
-            // ১. নিজের স্ক্রিনে ছবি দেখানো
-            addImageMessage(imageData, 'me');
-            
-            // ২. সকেটের মাধ্যমে পার্টনারের কাছে পাঠানো
-            socket.emit('send_msg', { 
-                senderId: userId, 
-                image: imageData 
-            });
-        };
-        reader.readAsDataURL(input.files[0]);
-        input.value = ""; // ইনপুট রিসেট
     }
-}
-
-// ছবি চ্যাট বক্সে দেখানোর ফাংশন
-function addImageMessage(src, type) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = `msg ${type}`;
-
-    const imgContainer = document.createElement('div');
-    imgContainer.className = 'chat-img-container';
-
-    const img = document.createElement('img');
-    img.src = src;
-    img.className = 'chat-img';
-    
-    imgContainer.appendChild(img);
-    msgDiv.appendChild(imgContainer);
-    
-    document.getElementById('messages').appendChild(msgDiv);
-    scrollDown();
-}
-
-// পার্টনারের থেকে মেসেজ বা ফটো রিসিভ করা
-socket.on('receive_msg', (data) => {
-    if (data.image) {
-        addImageMessage(data.image, 'partner'); // যদি ফটো আসে
-    } else if (data.text) {
-        addMessage(data.text, 'partner'); // যদি টেক্সট আসে
-    }
-    tg.HapticFeedback.notificationOccurred('success');
-});
-
-// ছবি মেসেজ হিসেবে দেখানোর ফাংশন
-function addImageMessage(src, type) {
-    const div = document.createElement('div');
-    div.className = `msg ${type}`;
-    const img = document.createElement('img');
-    img.src = src;
-    img.className = 'chat-img';
-    img.onclick = () => tg.showScanQrPopup({ text: "Image View" }); // প্রিভিউ এর জন্য (টেলিগ্রাম স্টাইল)
-    
-    div.appendChild(img);
-    document.getElementById('messages').appendChild(div);
-    scrollDown();
-}
-
-// বিদ্যমান socket.on('receive_msg') আপডেট করুন
-socket.on('receive_msg', (data) => {
-    if (data.image) {
-        addImageMessage(data.image, 'partner');
-    } else {
-        addMessage(data.text, 'partner');
-    }
-    tg.HapticFeedback.notificationOccurred('success');
-});
-
-        // Adsgram ইন-অ্যাপ ইন্টারস্টীশিয়াল (যথাযথভাবে রাখা হয়েছে)
-        if(window.show_10375834) {
-            show_10375834({
-                type: 'inApp',
-                inAppSettings: { frequency: 2, capping: 0.1, interval: 30, timeout: 5, everyPage: false }
-            });
-        }
-    </script>
+</script>
 </body>
 </html>
