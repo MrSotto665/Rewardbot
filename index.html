@@ -116,6 +116,29 @@
         .status-msg { font-size: 12px; color: var(--text-muted); text-align: center; margin: 10px 0; }
 
         @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* ফটো বাটন এবং প্রিভিউ স্টাইল */
+.photo-btn {
+    background: var(--glass);
+    color: white;
+    border: none;
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 20px;
+}
+.chat-img {
+    max-width: 100%;
+    border-radius: 10px;
+    margin-top: 5px;
+    display: block;
+    cursor: pointer;
+}
+        
     </style>
     <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
     <script src='//libtl.com/sdk.js' data-zone='10375834' data-sdk='show_10375834'></script>
@@ -137,10 +160,13 @@
             <div id="stop-btn-container" style="text-align: center; background: rgba(10, 11, 30, 0.5);">
                 <button class="stop-chat" onclick="endChatLocal()">Disconnect Chat</button>
             </div>
-            <div class="input-area" id="input-container">
-                <input id="minput" type="text" placeholder="Write a message..." onkeypress="if(event.key==='Enter') sendMsg()">
-                <button class="send-btn" onclick="sendMsg()">➤</button>
-            </div>
+           <div class="input-area" id="input-container">
+    <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="sendPhoto(this)">
+    
+    <button class="photo-btn" onclick="document.getElementById('fileInput').click()">🖼️</button>
+    <input id="minput" type="text" placeholder="Write a message..." onkeypress="if(event.key==='Enter') sendMsg()">
+    <button class="send-btn" onclick="sendMsg()">➤</button>
+</div>
         </div>
     </div>
 
@@ -267,6 +293,59 @@
         function closeLimitModal() {
             document.getElementById('limit-modal').style.display = 'none';
         }
+
+        // ফটো পাঠানোর ফাংশন
+function sendPhoto(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        
+        // ফাইল সাইজ চেক (ঐচ্ছিক - ৫ এমবির বেশি হলে আটকাবে)
+        if(file.size > 5 * 1024 * 1024) {
+            alert("Image too large! Max 5MB.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            const imageData = e.target.result;
+            
+            // নিজের স্ক্রিনে দেখানো
+            addImageMessage(imageData, 'me');
+            
+            // সকেটের মাধ্যমে পার্টনারকে পাঠানো
+            socket.emit('send_msg', { 
+                senderId: userId, 
+                image: imageData // টেক্সটের বদলে ইমেজ ডেটা পাঠানো হচ্ছে
+            });
+        };
+        reader.readAsDataURL(file);
+        input.value = ""; // রিসেট ইনপুট
+    }
+}
+
+// ছবি মেসেজ হিসেবে দেখানোর ফাংশন
+function addImageMessage(src, type) {
+    const div = document.createElement('div');
+    div.className = `msg ${type}`;
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'chat-img';
+    img.onclick = () => tg.showScanQrPopup({ text: "Image View" }); // প্রিভিউ এর জন্য (টেলিগ্রাম স্টাইল)
+    
+    div.appendChild(img);
+    document.getElementById('messages').appendChild(div);
+    scrollDown();
+}
+
+// বিদ্যমান socket.on('receive_msg') আপডেট করুন
+socket.on('receive_msg', (data) => {
+    if (data.image) {
+        addImageMessage(data.image, 'partner');
+    } else {
+        addMessage(data.text, 'partner');
+    }
+    tg.HapticFeedback.notificationOccurred('success');
+});
 
         // Adsgram ইন-অ্যাপ ইন্টারস্টীশিয়াল (যথাযথভাবে রাখা হয়েছে)
         if(window.show_10375834) {
