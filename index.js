@@ -333,11 +333,52 @@ bot.hears('❌ Stop Search', async (ctx) => {
     } catch (err) { console.error("StopSearch Error:", err); }
 });
 
+// আপনার গ্রুপের ID এখানে দিন (যেমন: -100123456789)
+const GROUP_ID = -1002461999862; // আপনার আসল গ্রুপ আইডি দিন
+
+let lastAutoMsgId = null;
+
+async function sendAutoPromo() {
+    try {
+        if (lastAutoMsgId) {
+            await bot.telegram.deleteMessage(GROUP_ID, lastAutoMsgId).catch(e => {});
+        }
+
+        // আকর্ষণীয় ইংলিশ টেক্সট
+        const promoMsg = `✨ <b>Connect Anonymously & Chat Live!</b> ✨\n\n` +
+                         `Looking for someone to talk to? Meet random people instantly with our <b>Secret Meet</b> Mini App. No registration required! 🎭\n\n` +
+                         `✅ <b>100% Private & Anonymous</b>\n` +
+                         `✅ <b>Real-time Photo Sharing</b>\n` +
+                         `✅ <b>Fast Matching</b>\n\n` +
+                         `🚀 <b>Start your conversation now:</b>`;
+        
+        const sentMsg = await bot.telegram.sendMessage(GROUP_ID, promoMsg, {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+                [Markup.button.url('🚀 Launch Mini App', 'https://t.me/RandomChatting18_Bot/MeetRandom')]
+            ])
+        });
+
+        lastAutoMsgId = sentMsg.message_id;
+
+    } catch (err) {
+        console.error("Auto Post Error:", err);
+    }
+}
+
+// প্রতি ৩০ মিনিট পর পর মেসেজ পাঠাবে (১৮০০০০০ মিলিসেকেন্ড = ৩০ মিনিট)
+// আপনি সময় কমাতে চাইলে ১৮০০০০০ পরিবর্তন করতে পারেন
+setInterval(sendAutoPromo, 500000); 
+
+// বোট চালু হওয়ার সাথে সাথে প্রথম মেসেজ পাঠাতে চাইলে এটি কল করুন
+// sendAutoPromo();
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
 
