@@ -116,16 +116,21 @@ io.on('connection', (socket) => {
     }
 });
 
-    socket.on('send_msg', async (data) => {
-        const { senderId, text } = data;
-        const user = await User.findOne({ userId: Number(senderId) });
-        if (user && user.webPartnerId) {
-            const partner = await User.findOne({ userId: user.webPartnerId });
-            if (partner && partner.webSocketId) {
-                io.to(partner.webSocketId).emit('receive_msg', { text });
-            }
+ socket.on('send_msg', async (data) => {
+    const { senderId, text, image } = data; // image ফিল্ড যোগ করা হয়েছে
+    const user = await User.findOne({ userId: Number(senderId) });
+    
+    if (user && user.webPartnerId) {
+        const partner = await User.findOne({ userId: user.webPartnerId });
+        if (partner && partner.webSocketId) {
+            // যদি টেক্সট থাকে তবে টেক্সট পাঠাবে, আর ইমেজ থাকলে ইমেজ
+            io.to(partner.webSocketId).emit('receive_msg', { 
+                text: text || null, 
+                image: image || null 
+            });
         }
-    });
+    }
+});
 
     // index.js এর ভেতর এই ডিসকানেক্ট লজিকটি দিন
 socket.on('disconnect', async () => {
@@ -329,6 +334,7 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
 
