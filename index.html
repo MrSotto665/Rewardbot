@@ -131,12 +131,21 @@
     cursor: pointer;
     font-size: 20px;
 }
-.chat-img {
-    max-width: 100%;
-    border-radius: 10px;
+.chat-img-container {
+    max-width: 200px; 
+    height: 150px; /* হাইট ফিক্সড করে দেওয়া হলো যাতে ইউনিফর্ম দেখায় */
+    border-radius: 12px;
+    overflow: hidden; 
     margin-top: 5px;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* ছবি ফেটে যাবে না, ফ্রেমের ভেতর ফিট হবে */
     display: block;
-    cursor: pointer;
 }
         
     </style>
@@ -295,33 +304,55 @@
         }
 
         // ফটো পাঠানোর ফাংশন
+// ফটো পাঠানোর ফাংশন (সাধারণ ইউজারদের জন্য ওপেন)
 function sendPhoto(input) {
     if (input.files && input.files[0]) {
-        const file = input.files[0];
-        
-        // ফাইল সাইজ চেক (ঐচ্ছিক - ৫ এমবির বেশি হলে আটকাবে)
-        if(file.size > 5 * 1024 * 1024) {
-            alert("Image too large! Max 5MB.");
-            return;
-        }
-
         const reader = new FileReader();
         reader.onload = function (e) {
             const imageData = e.target.result;
             
-            // নিজের স্ক্রিনে দেখানো
+            // ১. নিজের স্ক্রিনে ছবি দেখানো
             addImageMessage(imageData, 'me');
             
-            // সকেটের মাধ্যমে পার্টনারকে পাঠানো
+            // ২. সকেটের মাধ্যমে পার্টনারের কাছে পাঠানো
             socket.emit('send_msg', { 
                 senderId: userId, 
-                image: imageData // টেক্সটের বদলে ইমেজ ডেটা পাঠানো হচ্ছে
+                image: imageData 
             });
         };
-        reader.readAsDataURL(file);
-        input.value = ""; // রিসেট ইনপুট
+        reader.readAsDataURL(input.files[0]);
+        input.value = ""; // ইনপুট রিসেট
     }
 }
+
+// ছবি চ্যাট বক্সে দেখানোর ফাংশন
+function addImageMessage(src, type) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `msg ${type}`;
+
+    const imgContainer = document.createElement('div');
+    imgContainer.className = 'chat-img-container';
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'chat-img';
+    
+    imgContainer.appendChild(img);
+    msgDiv.appendChild(imgContainer);
+    
+    document.getElementById('messages').appendChild(msgDiv);
+    scrollDown();
+}
+
+// পার্টনারের থেকে মেসেজ বা ফটো রিসিভ করা
+socket.on('receive_msg', (data) => {
+    if (data.image) {
+        addImageMessage(data.image, 'partner'); // যদি ফটো আসে
+    } else if (data.text) {
+        addMessage(data.text, 'partner'); // যদি টেক্সট আসে
+    }
+    tg.HapticFeedback.notificationOccurred('success');
+});
 
 // ছবি মেসেজ হিসেবে দেখানোর ফাংশন
 function addImageMessage(src, type) {
