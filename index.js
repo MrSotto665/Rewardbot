@@ -116,19 +116,23 @@ io.on('connection', (socket) => {
     }
 });
 
- socket.on('send_msg', async (data) => {
-    const { senderId, text, image } = data; // image ফিল্ড যোগ করা হয়েছে
-    const user = await User.findOne({ userId: Number(senderId) });
-    
-    if (user && user.webPartnerId) {
-        const partner = await User.findOne({ userId: user.webPartnerId });
-        if (partner && partner.webSocketId) {
-            // যদি টেক্সট থাকে তবে টেক্সট পাঠাবে, আর ইমেজ থাকলে ইমেজ
-            io.to(partner.webSocketId).emit('receive_msg', { 
-                text: text || null, 
-                image: image || null 
-            });
+socket.on('send_msg', async (data) => {
+    const { senderId, text, image } = data; 
+    try {
+        const user = await User.findOne({ userId: Number(senderId) });
+        
+        if (user && user.webPartnerId) {
+            const partner = await User.findOne({ userId: user.webPartnerId });
+            if (partner && partner.webSocketId) {
+                // এখানে text অথবা image যা আসবে তাই পার্টনারের কাছে চলে যাবে
+                io.to(partner.webSocketId).emit('receive_msg', { 
+                    text: text || null, 
+                    image: image || null 
+                });
+            }
         }
+    } catch (err) {
+        console.error("Web Send Msg Error:", err);
     }
 });
 
@@ -334,6 +338,7 @@ server.listen(PORT, () => {
     console.log(`Server Live`);
     bot.launch();
 });
+
 
 
 
